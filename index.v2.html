@@ -24,13 +24,14 @@
 <link rel="stylesheet" href="style.v2.css">
 <script src="config.js"></script>
 </head>
-<body>
+<body class="intro">
 <div id="app"></div>
 <div id="vignette"></div>
 
 <div id="hud" class="glass">
   <span class="title" id="hud-title">쉼터</span>
-  <span class="meta" id="people">혼자 쉬는 중</span>
+  <button class="meta people" id="people" type="button" title="누가 있는지 보기">혼자 쉬는 중</button>
+  <div id="who" class="who"></div>
   <span class="me">나: <b id="myname"></b><button id="rename" type="button">이름 바꾸기</button><button id="look-open2" type="button">모습 바꾸기</button></span>
   <span class="me">방 코드: <b id="room-code">MAIN</b><button id="room-copy" type="button">초대 주소 복사</button></span>
 </div>
@@ -45,8 +46,27 @@
 <div id="places" class="glass"><span class="label">길 찾기</span></div>
 
 <div id="gestures" class="glass">
-  <button type="button" id="g-wave">👋 손 흔들기</button>
-  <button type="button" id="g-bow">🙇 인사하기</button>
+  <button type="button" id="g-wave" title="손 흔들기">👋<span> 손 흔들기</span></button>
+  <button type="button" id="g-bow" title="인사하기">🙇<span> 인사하기</span></button>
+  <button type="button" id="g-dance" title="춤추기">💃<span> 춤추기</span></button>
+  <button type="button" id="g-stick" title="응원봉">🪄<span> 응원봉</span></button>
+  <button type="button" id="g-rps" title="가위바위보">✌️<span> 가위바위보</span></button>
+</div>
+
+<div id="pick" class="glass chooser">
+  <p id="pick-title">골라 주세요</p>
+  <div class="picks" id="pick-list"></div>
+  <button type="button" id="pick-cancel" class="cancel">그만두기</button>
+</div>
+
+<div id="rps" class="glass">
+  <p id="rps-title">가위바위보!</p>
+  <div class="picks">
+    <button type="button" data-pick="0">✌️<span>가위</span></button>
+    <button type="button" data-pick="1">✊<span>바위</span></button>
+    <button type="button" data-pick="2">🖐️<span>보</span></button>
+  </div>
+  <button type="button" id="rps-cancel" class="cancel">그만두기</button>
 </div>
 
 <div id="chat" class="glass">
@@ -119,6 +139,7 @@
 
 <div id="intro" class="overlay show">
   <div class="box glass">
+    <p class="kicker">3D HEALING SPACE</p>
     <h1 id="intro-title">쉼터</h1>
     <p class="sub" id="intro-sub"></p>
     <ul>

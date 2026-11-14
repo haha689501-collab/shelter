@@ -5,3 +5,6 @@ _비교샷/
 .vercel/
 node_modules/
 .env*
+
+# 발표 자료
+*.pptx

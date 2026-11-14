@@ -770,7 +770,7 @@
     x: 0, z: 34, radius: 10, state: {},
   });
   places.push({
-    id: 'plaza', type: 'plaza', name: C.title, desc: '연못가에 걸터앉아 물소리를 들어 보세요.',
+    id: 'plaza', type: 'plaza', name: C.title, desc: '연못을 둘러싼 벤치에 앉아 물소리를 들어 보세요.',
     x: 0, z: 0, radius: 7.6, labelY: 3.6, state: {},
   });
   const flatZones = [{ x: 0, z: 0, r: 9, soft: 7 }];
@@ -1326,21 +1326,39 @@
     const padGeo = new THREE.CircleGeometry(1, 20, 0.35, Math.PI * 2 - 0.7);
     const padMat = new THREE.MeshStandardMaterial({ color: '#4f8f54', roughness: 0.75, side: THREE.DoubleSide, envMapIntensity: 0.4 });
     for (let i = 0; i < 9; i++) {
-      const a = rnd() * Math.PI * 2, rr = 1.2 + rnd() * (R - 1.5);
-      const sc = 0.5 + rnd() * 0.45;
+      // 가운데 기둥과 바깥 벽에 닿지 않는 고리 안에서만 흘러갑니다
+      const a = rnd() * Math.PI * 2, rr = 1.85 + rnd() * 0.95;
+      const sc = 0.5 + rnd() * 0.4;
       const lp = new THREE.Mesh(padGeo, padMat);
-      lp.position.set(Math.cos(a) * rr, 0.47, Math.sin(a) * rr);
+      // 물 윗면(0.46)보다 확실히 위 — 물속으로 잠겼다 나왔다 하면 깜빡여 보입니다
+      lp.position.set(Math.cos(a) * rr, 0.49, Math.sin(a) * rr);
       lp.rotation.set(-Math.PI / 2, 0, rnd() * 6);
       lp.scale.setScalar(sc);
+      lp.renderOrder = 3;
       scene.add(lp);
-      pond.lily.push({ m: lp, p: rnd() * 6.3, y: 0.47 });
+      // 연못을 따라 아주 천천히 한 방향으로 흘러갑니다 (바깥쪽일수록 느리게)
+      const flow = { a, rr, sp: (0.035 + rnd() * 0.02) * (2.4 / rr), p: rnd() * 6.3, spin: (rnd() - 0.5) * 0.06 };
+      pond.lily.push({ m: lp, y: 0.49, flow, dx: 0, dz: 0 });
       if (i % 3 === 0) {
         const fl = new THREE.Mesh(blossomGeo, new THREE.MeshStandardMaterial({ color: i % 2 ? '#ffb3d1' : '#fff0f4', roughness: 0.8, envMapIntensity: 0.3, vertexColors: true }));
-        fl.position.set(Math.cos(a) * rr + 0.2, 0.46, Math.sin(a) * rr + 0.2);
+        fl.position.set(Math.cos(a) * rr + 0.2, 0.48, Math.sin(a) * rr + 0.2);
         fl.scale.setScalar(1.15);
+        fl.renderOrder = 3;
         scene.add(fl);
-        pond.lily.push({ m: fl, p: rnd() * 6.3, y: 0.46 });
+        pond.lily.push({ m: fl, y: 0.48, flow: pond.lily[pond.lily.length - 1].flow, dx: 0.2, dz: 0.2 });   // 연꽃은 제 연잎과 함께
       }
+    }
+    // 연못을 바라보는 벤치 — 광장 돌바닥 위, 연못 쪽을 향해 (연못 테두리에 걸터앉지 않습니다)
+    pond.benches = [];
+    for (const ang of [1.5, -1.5]) {               // 두 개만 — 연못 양옆에 마주 보게
+      const bx = Math.sin(ang) * 6.3, bz = Math.cos(ang) * 6.3;
+      const b = bench();
+      b.position.set(bx, groundY(bx, bz), bz);
+      b.rotation.y = Math.atan2(-bx, -bz);          // 등받이는 바깥, 앉으면 연못을 봅니다
+      scene.add(b);
+      pond.benches.push({ x: bx, z: bz, ry: b.rotation.y });
+      // 사람이 벤치를 뚫고 지나가지 않게 — 회전 상자 (앉아 있는 동안에는 밀어내지 않습니다)
+      blockers.push({ x: bx, z: bz, hw: 1.25, hd: 0.32, c: Math.cos(b.rotation.y), s: Math.sin(b.rotation.y) });
     }
     // 잉어 — 몸통과 꼬리를 하나로 합쳐 가볍게
     const koiGeo = mergeGeos([
@@ -1732,7 +1750,27 @@
         roof.rotation.x = -Math.PI / 2 + s * ang;
         g.add(roof);
       }
-      g.add(mesh(new THREE.BoxGeometry(0.16, 0.16, D + 0.2), frame, 0, H + rise, 0));
+      // 용마루 — 지붕이 앞뒤로 기울어 있으므로 '긴 쪽(x)'을 따라 놓아야 합니다
+      // (예전에는 z 방향으로 놓아 지붕 위에 막대가 가로질러 떠 보였음)
+      g.add(mesh(new THREE.BoxGeometry(W + 0.2, 0.16, 0.16), frame, 0, H + rise, 0));
+      // 서까래 — 양 끝과 가운데에서 경사를 따라 내려옵니다
+      for (const x of [-W / 2, 0, W / 2]) for (const s of [-1, 1]) {
+        const rafter = mesh(new THREE.BoxGeometry(0.12, 0.12, slope), frame, x, H + rise / 2, s * half / 2);
+        rafter.rotation.x = s * ang;
+        g.add(rafter);
+      }
+      // 양 옆 삼각형 유리 (박공)
+      {
+        const tri = new THREE.Shape();
+        tri.moveTo(-half, 0); tri.lineTo(half, 0); tri.lineTo(0, rise); tri.closePath();
+        const triGeo = new THREE.ShapeGeometry(tri);
+        for (const x of [-W / 2, W / 2]) {
+          const gable = new THREE.Mesh(triGeo, glass);
+          gable.rotation.y = Math.PI / 2;
+          gable.position.set(x, H, 0);
+          g.add(gable);
+        }
+      }
       // 화분 선반
       for (const x of [-4, 4]) {
         g.add(mesh(new THREE.BoxGeometry(2.2, 0.12, 6), frame, x, 0.92, 0));
@@ -2019,17 +2057,67 @@
         g.add(goal);
       }
       p.state.lieLocal = new THREE.Vector3(5, 0, 3);
-      // 하늘을 도는 새
-      const bird = new THREE.Group();
-      const bm = new THREE.MeshBasicMaterial({ color: '#1d1b2e', side: THREE.DoubleSide, fog: false });
-      const wingGeo = new THREE.BufferGeometry();
-      wingGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, -0.5, 0, 0, 0.7, 2.6, 0, 0]), 3));
-      const wl = new THREE.Mesh(wingGeo, bm), wr = new THREE.Mesh(wingGeo, bm);
-      wr.scale.x = -1;
-      bird.add(wl, wr, mesh(new THREE.ConeGeometry(0.25, 1.6, 5), bm));
-      bird.children[2].rotation.x = Math.PI / 2;
-      scene.add(bird);
-      p.state.bird = { obj: bird, wl, wr };
+      // 하늘을 도는 새 — 하얀 새 네 마리가 느슨한 V자로, 몇 번 날갯짓하고 길게 미끄러집니다
+      // (검은 삼각형 한 마리는 까마귀처럼 보인다는 의견)
+      const birdMat = new THREE.MeshStandardMaterial({ color: '#fbf5ea', roughness: 0.85, emissive: '#5a4636', emissiveIntensity: 0.35, side: THREE.DoubleSide });
+      const tipMat = new THREE.MeshStandardMaterial({ color: '#d9cdbd', roughness: 0.9, side: THREE.DoubleSide });
+      const beakMat = new THREE.MeshStandardMaterial({ color: '#f0a65a', roughness: 0.6 });
+      const wingShape = new THREE.Shape();
+      wingShape.moveTo(0, -0.24);
+      wingShape.quadraticCurveTo(0.7, -0.34, 1.25, -0.08);      // 뒷날개 선
+      wingShape.quadraticCurveTo(1.42, 0.06, 1.2, 0.14);        // 둥근 날개 끝
+      wingShape.quadraticCurveTo(0.6, 0.34, 0, 0.26);           // 앞날개 선
+      wingShape.closePath();
+      const wingGeo = new THREE.ShapeGeometry(wingShape, 6);
+      wingGeo.rotateX(-Math.PI / 2);
+      const tipGeo = new THREE.SphereGeometry(0.16, 8, 6);
+      const bodyGeo = new THREE.SphereGeometry(0.24, 12, 10);
+      const headGeo = new THREE.SphereGeometry(0.16, 12, 10);
+      const beakGeo = new THREE.ConeGeometry(0.05, 0.16, 6);
+      const tailShape = new THREE.Shape();
+      tailShape.moveTo(-0.07, 0); tailShape.lineTo(-0.2, -0.42); tailShape.quadraticCurveTo(0, -0.34, 0.2, -0.42); tailShape.lineTo(0.07, 0);
+      const tailGeo = new THREE.ShapeGeometry(tailShape, 4);
+      tailGeo.rotateX(-Math.PI / 2);
+      const makeBird = () => {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(bodyGeo, birdMat);
+        body.scale.set(0.95, 0.85, 2.1);
+        const head = new THREE.Mesh(headGeo, birdMat);
+        head.position.set(0, 0.1, 0.52);
+        const beak = new THREE.Mesh(beakGeo, beakMat);
+        beak.rotation.x = Math.PI / 2;
+        beak.position.set(0, 0.08, 0.72);
+        const tail = new THREE.Mesh(tailGeo, birdMat);
+        tail.position.set(0, 0.02, -0.42);
+        const mkWing = (side) => {
+          const pivot = new THREE.Group();
+          pivot.position.set(side * 0.12, 0.08, 0.05);
+          const w = new THREE.Mesh(wingGeo, birdMat);
+          const tip = new THREE.Mesh(tipGeo, tipMat);   // 날개 끝만 살짝 회색 — 갈매기·백로 느낌
+          tip.scale.set(1.1, 0.12, 0.7);
+          tip.position.set(1.12, 0, 0.03);
+          pivot.add(w, tip);
+          pivot.scale.x = side;
+          return pivot;
+        };
+        const wl = mkWing(1), wr = mkWing(-1);
+        g.add(body, head, beak, tail, wl, wr);
+        return { obj: g, wl, wr };
+      };
+      const flock = new THREE.Group();
+      const birds = [[0, 0, 0], [-2.6, -0.5, -2.2], [2.4, 0.4, -2.6], [-4.8, -0.2, -4.6]].map(([x, y, z], i) => {
+        const b = makeBird();
+        b.obj.position.set(x, y, z);
+        b.obj.scale.setScalar(1.25 - i * 0.06);
+        b.off = i * 1.7;
+        b.base = new THREE.Vector3(x, y, z);
+        flock.add(b.obj);
+        return b;
+      });
+      // 새는 그림자를 드리우지 않습니다 (땅에 지나가는 검은 그림자가 무섭게 보인다는 의견)
+      flock.traverse((o) => { if (o.isMesh) { o.userData.noShadow = true; o.castShadow = false; o.receiveShadow = false; } });
+      scene.add(flock);
+      p.state.bird = { obj: flock, birds };
       p.state.stars = new THREE.Group();
       scene.add(p.state.stars);
       p.labelY = 6;
@@ -2593,15 +2681,29 @@
     if (u.pose === 'lie') { rootY = 0.34; rootRx = -Math.PI / 2; }
 
     // 제스처
-    let waveAmt = 0, bowAmt = 0, patAmt = 0;
+    let waveAmt = 0, bowAmt = 0, patAmt = 0, danceAmt = 0, stickAmt = 0, rpsAmt = 0, rpsT = 0, throwAmt = 0, throwT = 0;
     if (u.gesture) {
       u.gesture.t += dt;
-      const g = Math.sin(Math.min(1, u.gesture.t / 2.2) * Math.PI);
+      const dur = u.gesture.dur || 2.2, gt = u.gesture.t;
+      const g = Math.sin(Math.min(1, gt / dur) * Math.PI);
+      // 0.4초에 걸쳐 시작하고, 머물다가, 0.4초에 걸쳐 끝냅니다
+      const env = smooth(0, 0.4, gt) * (1 - smooth(dur - 0.4, dur, gt));
       if (u.gesture.type === 'bow') { bowAmt = g; upperRx += 0.72 * g; }
-      if (u.gesture.type === 'wave') waveAmt = g;
+      if (u.gesture.type === 'wave') waveAmt = env;
       if (u.gesture.type === 'pat') patAmt = g;
-      if (u.gesture.t > 2.2) u.gesture = null;
+      if (u.gesture.type === 'dance') danceAmt = env;
+      if (u.gesture.type === 'stick') stickAmt = env;
+      if (u.gesture.type === 'rps') { rpsAmt = env; rpsT = gt; }
+      if (u.gesture.type === 'throw') { throwAmt = 1 - smooth(0.75, 1.0, gt); throwT = gt; }
+      if (gt > dur) u.gesture = null;
     }
+    // 응원봉 — 흔드는 동안에만 오른손에 쥡니다
+    const holdStick = !!(u.gesture && u.gesture.type === 'stick');
+    if (holdStick && !u.stickObj) { u.stickObj = makeGlowStick(); u.arms[1].elbow.add(u.stickObj); }
+    if (u.stickObj) tintStick(u.stickObj, u.t);
+    if (!holdStick && u.stickObj) { u.arms[1].elbow.remove(u.stickObj); u.stickObj = null; }
+    const beat = u.t * 6.2;                       // 춤 박자 (약 1초에 한 번 통통)
+    if (danceAmt > 0.02) rootY += Math.abs(Math.sin(beat)) * 0.07 * danceAmt;
 
     // 다리
     for (let i = 0; i < u.legs.length; i++) {
@@ -2610,6 +2712,10 @@
       if (u.pose === 'sit') { hr = -1.3; kr = 1.4; }
       if (u.pose === 'crouch') { hr = -1.45 + sgn * 0.12; kr = 1.95; }
       if (u.pose === 'lie') { hr = 0.04 * sgn; kr = 0.05; }
+      if (danceAmt > 0.02 && u.pose === 'stand') {   // 무릎을 번갈아 굽히며 들썩
+        hr = lerp(hr, -0.12 + Math.sin(beat * 0.5 + i * Math.PI) * 0.28, danceAmt);
+        kr = lerp(kr, 0.28 + 0.28 * Math.sin(beat + i * Math.PI), danceAmt);
+      }
       u.legs[i].hip.rotation.x = lerp(u.legs[i].hip.rotation.x, hr, k);
       u.legs[i].knee.rotation.x = lerp(u.legs[i].knee.rotation.x, kr, k);
     }
@@ -2637,16 +2743,52 @@
       }
       let ez = 0;
       if (i === 1 && waveAmt > 0.02) {
-        // 어깨를 옆으로 들고(약 70도) 팔꿈치를 세워, 손만 좌우로 흔듭니다.
-        rz = sgn * (0.18 + 1.45 * waveAmt);
-        rx = -0.18 * waveAmt;
-        er = -0.12;
-        ez = -sgn * (1.1 + Math.sin(u.t * 11) * 0.5) * waveAmt;
+        // 실제 사람처럼: 위팔은 앞·옆으로 비스듬히(어깨보다 조금 낮게) 들고,
+        // 팔꿈치를 굽혀 손이 얼굴 옆으로 올라오게 한 뒤, 팔꿈치를 축으로 손을 좌우로 흔듭니다.
+        // (팔을 옆으로 쭉 펴고 아래팔만 세우면 로봇 팔처럼 보입니다)
+        const sway = Math.sin(u.t * 10.5) * waveAmt;
+        rz = sgn * (0.14 + 0.88 * waveAmt + sway * 0.05);   // 위팔도 손을 따라 아주 조금 움직임
+        rx = -0.62 * waveAmt;
+        er = -0.25 - 1.75 * waveAmt;                         // 팔꿈치 약 115도 굽힘
+        ez = -sgn * (0.12 * waveAmt + sway * 0.36);          // 손을 좌우로 (약 ±20도)
       }
       if (patAmt > 0.02 && i === 1) {   // 쓰다듬기 — 오른손을 앞 아래로 내려 토닥입니다
         rx = -1.0 - Math.sin(u.t * 7) * 0.18 * patAmt;
         rz = sgn * 0.3;
         er = -0.45;
+      }
+      if (danceAmt > 0.02) {            // 춤 — 두 팔을 번갈아 머리 위로
+        const up = 0.5 + 0.5 * Math.sin(beat * 0.5 + i * Math.PI);
+        rz = lerp(rz, sgn * (0.45 + 1.9 * up), danceAmt);
+        rx = lerp(rx, -0.35, danceAmt);
+        er = lerp(er, -1.0 + up * 0.7, danceAmt);
+      }
+      if (stickAmt > 0.02) {            // 응원봉 — 오른팔은 머리 위에서 좌우로, 왼팔은 박자 맞추기
+        if (i === 1) {
+          rz = lerp(rz, sgn * (2.35 + Math.sin(u.t * 5.2) * 0.38), stickAmt);
+          rx = lerp(rx, -0.15, stickAmt);
+          er = lerp(er, -0.2, stickAmt);
+        } else {
+          rz = lerp(rz, sgn * 0.3, stickAmt);
+          rx = lerp(rx, -0.7 - Math.abs(Math.sin(u.t * 5.2)) * 0.2, stickAmt);
+          er = lerp(er, -1.1, stickAmt);
+        }
+      }
+      if (rpsAmt > 0.02 && i === 1) {   // 가위바위보 — 주먹을 세 번 흔들고(1.5초), 앞으로 내밉니다
+        let tx2, te;
+        if (rpsT < 1.5) {
+          const pump = Math.abs(Math.sin(rpsT / 1.5 * Math.PI * 3));
+          tx2 = -0.65 - 0.35 * pump; te = -1.25 + 0.55 * pump;
+        } else { tx2 = -1.3; te = -0.15; }
+        rx = lerp(rx, tx2, rpsAmt);
+        rz = lerp(rz, sgn * 0.2, rpsAmt);
+        er = lerp(er, te, rpsAmt);
+      }
+      if (throwAmt > 0.02 && i === 1) { // 공 던지기 — 팔을 뒤로 젖혔다가(0.35초) 앞위로 휘두릅니다
+        const back = smooth(0, 0.3, throwT), fwd = smooth(0.3, 0.5, throwT);
+        rx = lerp(rx, lerp(0.95 * back, -1.9, fwd), throwAmt);
+        er = lerp(er, lerp(-1.4 * back, -0.15, fwd), throwAmt);
+        rz = lerp(rz, sgn * 0.25, throwAmt);
       }
       if (bowAmt > 0.02) {              // 절할 때는 두 팔을 몸 앞으로 모읍니다
         rx = -0.42 * bowAmt;
@@ -2663,9 +2805,10 @@
     u.inner.position.y = lerp(u.inner.position.y, rootY + bob, k);
     u.inner.rotation.x = lerp(u.inner.rotation.x, rootRx, Math.min(1, dt * 8));
     u.upper.rotation.x = lerp(u.upper.rotation.x, upperRx + w * 0.08, k);
-    u.body.rotation.z = lerp(u.body.rotation.z, Math.sin(u.gait) * 0.03 * w, k);
+    u.body.rotation.z = lerp(u.body.rotation.z, Math.sin(u.gait) * 0.03 * w + Math.sin(beat * 0.5) * 0.11 * danceAmt + Math.sin(u.t * 5.2) * 0.04 * stickAmt, k);
+    u.inner.rotation.y = lerp(u.inner.rotation.y, Math.sin(beat * 0.25) * 0.45 * danceAmt, k);
     u.head.rotation.x = lerp(u.head.rotation.x, bowAmt * 0.3, k);
-    u.head.rotation.z = lerp(u.head.rotation.z, -Math.sin(u.gait) * 0.05 * w + Math.sin(u.t * 0.9) * 0.03 * (1 - w), k);
+    u.head.rotation.z = lerp(u.head.rotation.z, -Math.sin(u.gait) * 0.05 * w + Math.sin(u.t * 0.9) * 0.03 * (1 - w) + waveAmt * 0.1, k);
     u.head.rotation.y = lerp(u.head.rotation.y, Math.sin(u.t * 0.45) * 0.22 * (1 - w), Math.min(1, dt * 2));
 
     // 눈 깜빡임
@@ -2766,7 +2909,7 @@
     const s = npcSpot();
     av.position.set(s.x, standY(s.x, s.z), s.z);
     scene.add(av);
-    const n = { av, target: npcSpot(), wait: rnd() * 5, speed: 1.5 + rnd() * 0.9, greet: rnd() * 6 };
+    const n = { av, name: d.name, target: npcSpot(), wait: rnd() * 5, speed: 1.5 + rnd() * 0.9, greet: rnd() * 6 };
     if (i === 0) {                       // 한 명은 강아지와 산책
       n.pet = makePet('dog', '#dcb784');
       n.pet.position.copy(av.position);
@@ -2787,6 +2930,35 @@
       petList.push(pet);
       return { obj: pet, home: spot.clone(), state: 'rest', t: 2 + rnd() * 4, target: spot.clone(), happy: 0 };
     });
+  }
+  // 번호표 — 동물 머리 위 (1 🐶 · 2 🐶 · 3 🐱 · 4 🐱)
+  const petTag = (pt, i) => `${i + 1} ${pt.obj.userData.kind === 'dog' ? '🐶' : '🐱'}`;
+  if (petCafe) petCafe.state.pets.forEach((pt, i) => {
+    const lb = makeLabel(petTag(pt, i), { size: 30, scale: 0.42 });
+    lb.position.y = 1.15;
+    lb.visible = false;                 // 평소엔 숨기고, 고를 때만 보입니다
+    pt.obj.add(lb);
+    pt.tag = lb;
+  });
+  // 번호표 — 온실 화분 (1~8 · ★ 큰 화분), 화분마다 따로 자랍니다
+  const potLevels = (() => { try { return JSON.parse(localStorage.getItem('shelter:pots') || '[]'); } catch (e) { return []; } })();
+  {
+    const gh0 = byType('greenhouse')[0];
+    if (gh0) (gh0.state.pots || []).forEach((q, i) => {
+      const lb = makeLabel(q.central ? '★' : String(i + 1), { size: 30, scale: 0.36 });
+      lb.position.copy(q.local).add(q.central ? new THREE.Vector3(1.25, 0.2, 0) : new THREE.Vector3(0, 0.7, 0));
+      lb.visible = false;               // 물 주기를 눌렀을 때만 보입니다
+      gh0.group.add(lb);
+      q.tag = lb;
+      if (!q.central) q.level = potLevels[i] || 0;
+    });
+  }
+  function growPot(i, save) {
+    const gh0 = byType('greenhouse')[0];
+    const q = gh0 && gh0.state.pots[i];
+    if (!q || q.central) return;
+    q.level = Math.min(12, (q.level || 0) + 1);
+    if (save) { potLevels[i] = q.level; localStorage.setItem('shelter:pots', JSON.stringify(potLevels)); }
   }
   function petSpotNear() {
     const a3 = rnd() * Math.PI * 2, r = rnd() * 5.2;
@@ -3225,11 +3397,99 @@
   // 효과
   // ------------------------------------------------------------------
   const floaters = [];
-  function floatEmoji(emoji, pos, size = 0.8) {
+  // 응원봉 — 무지개색이 막대를 따라 흐르며 빛납니다 (블룸 효과로 은은하게 번짐)
+  const stickHandleGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.16, 10);
+  function makeGlowStick() {
+    const g = new THREE.Group();
+    g.add(mesh(stickHandleGeo, mat('#2b2b3a', { roughness: 0.5 }), 0, -0.27, 0));
+    const tubeGeo = new THREE.CapsuleGeometry(0.05, 0.42, 6, 14);
+    const n = tubeGeo.attributes.position.count;
+    tubeGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    const tube = new THREE.Mesh(tubeGeo, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
+    tube.position.y = -0.62;
+    const halo = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.48, 4, 12),
+      new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    halo.position.y = -0.62;
+    // 막대 둘레로 은은하게 번지는 빛무리
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: softTex, color: '#ffffff', transparent: true, opacity: 0.55,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    glow.position.y = -0.62;
+    glow.scale.set(0.9, 1.25, 1);
+    g.add(tube, halo, glow);
+    g.userData = { tube, halo, glow };
+    tintStick(g, 0);
+    return g;
+  }
+  const _hsl = new THREE.Color();
+  function tintStick(g, t) {
+    const { tube, halo } = g.userData;
+    const pos = tube.geometry.attributes.position, col = tube.geometry.attributes.color;
+    for (let i = 0; i < pos.count; i++) {
+      const y = (pos.getY(i) + 0.26) / 0.52;               // 0(손잡이 쪽) ~ 1(끝)
+      _hsl.setHSL(((y * 0.85 - t * 0.45) % 1 + 1) % 1, 1, 0.55);
+      col.setXYZ(i, _hsl.r * 1.15, _hsl.g * 1.15, _hsl.b * 1.15);   // 너무 밝으면 하얗게 날아갑니다
+    }
+    col.needsUpdate = true;
+    halo.material.color.setHSL(((-t * 0.45) % 1 + 1) % 1, 1, 0.6);
+    const { glow } = g.userData;
+    glow.material.color.setHSL(((0.4 - t * 0.45) % 1 + 1) % 1, 1, 0.6);
+    glow.material.opacity = 0.45 + Math.sin(t * 3.1) * 0.1;      // 숨 쉬듯 살짝
+  }
+  // 주변을 비추는 빛 하나 — 미리 만들어 두고 옮겨 씁니다
+  //   (빛을 그때그때 새로 만들면 화면이 잠깐 멈칫합니다)
+  const stickLight = new THREE.PointLight('#ffffff', 0, 6, 2);
+  scene.add(stickLight);
+  const _stickPos = new THREE.Vector3();
+  function updateStickLight(dt) {
+    const s2 = player.userData.stickObj;
+    if (s2) {
+      s2.userData.tube.getWorldPosition(_stickPos);
+      stickLight.position.copy(_stickPos);
+      stickLight.color.copy(s2.userData.glow.material.color);
+    }
+    stickLight.intensity = lerp(stickLight.intensity, s2 ? 3.2 : 0, Math.min(1, dt * 4));
+  }
+  // 번호로 고르기 — labels: 버튼 글자 배열, onPick(i)
+  let pickTags = [];
+  function pickFrom(title, labels, onPick, tags = []) {
+    const box = $('#pick');
+    $('#pick-title').textContent = title;
+    for (const tg of pickTags) tg.visible = false;          // 이전에 보이던 번호표는 숨기고
+    pickTags = tags.filter(Boolean);
+    for (const tg of pickTags) tg.visible = true;           // 고르는 동안만 번호표를 띄웁니다
+    const close = () => { box.classList.remove('show'); clearTimeout(box._t); for (const tg of pickTags) tg.visible = false; pickTags = []; };
+    $('#pick-list').replaceChildren(...labels.map((lb, i) => {
+      const b = el('button', { type: 'button', textContent: lb });
+      b.onclick = () => { close(); onPick(i); };
+      return b;
+    }));
+    $('#pick-cancel').onclick = close;
+    box.classList.add('show');
+    clearTimeout(box._t);
+    box._t = setTimeout(close, 15000);
+  }
+  // 지금 들어와 있는 사람들 (닉네임 목록용)
+  let presentIds = [];
+  function renderWho() {
+    const box = $('#who');
+    const rows = [el('div', { className: 'me-row', textContent: `${me.name} (나)` })];
+    let waiting = 0;
+    for (const id of presentIds) {
+      if (id === me.id) continue;
+      const o = others.get(id);
+      if (o && o.name) rows.push(el('div', { textContent: o.name }));
+      else waiting++;
+    }
+    if (waiting) rows.push(el('div', { className: 'sub', textContent: `들어오는 중 ${waiting}명` }));
+    rows.push(el('div', { className: 'sub', textContent: `둘러보는 이웃(NPC) ${npcs.length}명은 빼고 셌어요` }));
+    box.replaceChildren(...rows);
+  }
+  // hold: 머리 위에 머무는 시간(초). 0 이면 바로 떠오르며 사라집니다.
+  function floatEmoji(emoji, pos, size = 0.8, hold = 0) {
     const s = emojiSprite(emoji, size);
     s.position.copy(pos);
     scene.add(s);
-    floaters.push({ s, t: 0, vx: (Math.random() - 0.5) * 0.4 });
+    floaters.push({ s, t: 0, vx: hold ? 0 : (Math.random() - 0.5) * 0.4, hold, base: s.scale.clone() });
   }
   // 물주기 — 하늘에서 떨어지는 게 아니라, 물뿌리개가 기울어 물줄기가 쏟아집니다.
   const drops = [], splashes = [];
@@ -3283,9 +3543,9 @@
     if (byMe) {
       giveCan(player);
       player.userData.watering = 2.6;        // 팔을 앞으로 내밀어 기울입니다
-      pour = { t: 0, gh, hand: true, landY: world.y, bush: target && target.bush };
+      pour = { t: 0, gh, hand: true, landY: world.y, bush: target && target.bush, aim: world.clone() };
     } else {
-      pour = { t: 0, gh, hand: false, landY: world.y, bush: target && target.bush,
+      pour = { t: 0, gh, hand: false, landY: world.y, bush: target && target.bush, aim: world.clone(),
         spout: world.clone().add(new THREE.Vector3(0.5, 1.2, 0.3)) };
     }
   }
@@ -3306,32 +3566,119 @@
     scene.add(m);
     splashes.push({ m, t: 0 });
   }
-  // 공 던지기 — 포물선으로 날아가고, 가까운 강아지가 달려갑니다
+  // 공 던지기 — 강아지 쪽을 바라보고 팔을 휘둘러 던집니다.
+  //   땅에 닿으면 통통 튀다가 데굴데굴 굴러, 멍냥 쉼터 울타리 안에서 멈춥니다.
+  //   (예전: 바라보던 방향으로 미사일처럼 날아가 그 자리에 '착륙')
   let ball = null;
-  function throwBall() {
+  const BALL_R = 0.14;
+  function throwBall(target) {
     if (!ball) {
-      ball = mesh(new THREE.SphereGeometry(0.14, 12, 10), mat('#ffd166', { roughness: 0.5 }), 0, 0, 0);
+      ball = mesh(new THREE.SphereGeometry(BALL_R, 16, 12), mat('#ffd166', { roughness: 0.5 }), 0, 0, 0);
+      // 구르는 게 보이도록 테니스공 줄무늬
+      const seam = mesh(new THREE.TorusGeometry(BALL_R * 1.005, 0.012, 6, 24), mat('#fff6dc', { roughness: 0.6 }), 0, 0, 0);
+      seam.rotation.x = 0.6;
+      ball.add(seam);
       ball.castShadow = true;
       scene.add(ball);
     }
-    ball.visible = true;
-    const dir = player.rotation.y;
-    const land = new THREE.Vector3(
-      player.position.x + Math.sin(dir) * (4 + Math.random() * 3), 0,
-      player.position.z + Math.cos(dir) * (4 + Math.random() * 3));
-    land.y = standY(land.x, land.z) + 0.14;
-    ball.userData.flight = { from: ball.position.clone().copy(player.position).add(new THREE.Vector3(0, 1.2, 0)), to: land, t: 0 };
-    ball.position.copy(ball.userData.flight.from);
-    if (petCafe) {
-      let best = null, bd = 99;
-      for (const pt of petCafe.state.pets) {
-        if (pt.obj.userData.kind !== 'dog') continue;
-        const d = pt.obj.position.distanceTo(land);
-        if (d < bd) { bd = d; best = pt; }
+    // 던질 상대 — 고른 동물 (그 동물 쪽을 바라보고 던집니다)
+    const dog = target || null;
+    if (dog) {
+      // 너무 멀거나 가까우면 그 동물에게서 약 4m 떨어진 쪽으로 옮겨 섭니다 (쉼터 안)
+      const away = new THREE.Vector3(player.position.x - dog.obj.position.x, 0, player.position.z - dog.obj.position.z);
+      const dd = away.length();
+      if (dd > 6 || dd < 2.5) {
+        if (away.lengthSq() < 0.01) away.set(0, 0, 1);
+        away.normalize();
+        const stand = keepInCafe(dog.obj.position.clone().addScaledVector(away, 4), 6.0);
+        player.position.set(stand.x, standY(stand.x, stand.z), stand.z);
+        pushOut(player.position);
       }
-      if (best) { best.state = 'fetch'; best.target = land.clone(); }
     }
+    const aim = dog ? dog.obj.position : new THREE.Vector3(petCafe.x, 0, petCafe.z + 1);
+    const dir = new THREE.Vector3(aim.x - player.position.x, 0, aim.z - player.position.z);
+    if (dir.lengthSq() < 0.01) dir.set(0, 0, 1);
+    const dist = clamp(dir.length() + 1.2, 3, 7);
+    dir.normalize();
+    moveTarget = null;
+    player.rotation.y = Math.atan2(dir.x, dir.z);
+    if (player.userData.pose !== 'stand') setPose('stand');
+    player.userData.gesture = { type: 'throw', t: 0, dur: 1.0 };
+    ball.visible = false;
+    ball.userData.flight = ball.userData.roll = ball.userData.carriedBy = null;
+    if (dog) { dog.state = 'watch'; dog.obj.rotation.y = Math.atan2(player.position.x - dog.obj.position.x, player.position.z - dog.obj.position.z); }
+    // 팔을 뒤로 젖혔다 앞으로 휘두르는 순간(0.42초)에 손을 떠납니다
+    setTimeout(() => {
+      const from = player.position.clone().addScaledVector(dir, 0.3);
+      from.y += 1.75;
+      const land = player.position.clone().addScaledVector(dir, dist * 0.75);
+      keepInCafe(land, 4.8);           // 울타리보다 안쪽에 떨어지게
+      land.y = groundY(land.x, land.z) + BALL_R;
+      ball.position.copy(from);
+      ball.visible = true;
+      const speed0 = 1.3 * 1.8;                 // 살짝 — 약 1.3m 굴러가다 멈춥니다 (감속 1.8/초)
+      ball.userData.flight = { from, to: land, t: 0, dur: 0.75, h: 1.1, vx: dir.x * speed0, vz: dir.z * speed0 };
+      ball.userData.thrownTo = dog;              // 이 동물이 공이 멈추길 기다렸다가 가지러 갑니다
+      // 다른 강아지들도 고개를 돌립니다
+    }, 420);
     toast('공을 던졌어요 🎾', 1800);
+  }
+  // 멍냥 쉼터 울타리(반지름 r) 안으로, 가게 벽 앞으로
+  function keepInCafe(v, r = 6.5) {
+    const dx = v.x - petCafe.x, dz = v.z - petCafe.z, d = Math.hypot(dx, dz);
+    if (d > r) { v.x = petCafe.x + dx / d * r; v.z = petCafe.z + dz / d * r; }
+    if (v.z - petCafe.z < -2.6 && Math.abs(v.x - petCafe.x) < 3.0) v.z = petCafe.z - 2.6;
+    return v;
+  }
+  const _spinAxis = new THREE.Vector3();
+  function updateBall(dt) {
+    if (!ball || !ball.visible) return;
+    const u = ball.userData;
+    if (u.carriedBy) {                         // 강아지가 물고 있음
+      const o = u.carriedBy.obj;
+      ball.position.set(o.position.x + Math.sin(o.rotation.y) * 0.5, o.position.y + 0.42, o.position.z + Math.cos(o.rotation.y) * 0.5);
+      return;
+    }
+    let vx = 0, vz = 0;
+    if (u.flight) {
+      const f = u.flight;
+      f.t += dt / f.dur;
+      const e = Math.min(1, f.t);
+      ball.position.lerpVectors(f.from, f.to, e);
+      ball.position.y = lerp(f.from.y, f.to.y, e) + Math.sin(e * Math.PI) * f.h;
+      vx = (f.to.x - f.from.x) / f.dur; vz = (f.to.z - f.from.z) / f.dur;
+      if (e >= 1) { u.flight = null; u.roll = { vx: f.vx, vz: f.vz, hop: 0.32, hopT: 0 }; }
+    } else if (u.roll) {
+      const r = u.roll;
+      ball.position.x += r.vx * dt;
+      ball.position.z += r.vz * dt;
+      const decay = Math.exp(-1.8 * dt);
+      r.vx *= decay; r.vz *= decay;
+      // 울타리에 닿으면 튕겨 나옵니다
+      const dx = ball.position.x - petCafe.x, dz = ball.position.z - petCafe.z, d = Math.hypot(dx, dz);
+      if (d > 6.2) {   // 울타리 안쪽에서 멈추게 — 넘어가지 않습니다
+        const nx = dx / d, nz = dz / d, vn = r.vx * nx + r.vz * nz;
+        if (vn > 0) { r.vx -= 1.6 * vn * nx; r.vz -= 1.6 * vn * nz; }
+        ball.position.x = petCafe.x + nx * 6.2; ball.position.z = petCafe.z + nz * 6.2;
+      }
+      // 가게 벽
+      if (ball.position.z - petCafe.z < -2.6 && Math.abs(ball.position.x - petCafe.x) < 3.0) {
+        ball.position.z = petCafe.z - 2.6;
+        if (r.vz < 0) r.vz = -r.vz * 0.5;
+      }
+      // 착지 직후 통통 — 점점 낮게
+      r.hopT += dt;
+      r.hop *= Math.exp(-2.6 * dt);
+      ball.position.y = groundY(ball.position.x, ball.position.z) + BALL_R + Math.abs(Math.sin(r.hopT * 9)) * r.hop;
+      vx = r.vx; vz = r.vz;
+      if (Math.hypot(r.vx, r.vz) < 0.05 && r.hop < 0.01) u.roll = null;   // 멈춤
+    }
+    // 굴러가는 방향으로 회전 (미끄러지지 않고 '데굴데굴')
+    const sp = Math.hypot(vx, vz);
+    if (sp > 0.01 && !u.flight) {
+      _spinAxis.set(vz, 0, -vx).normalize();
+      ball.rotateOnWorldAxis(_spinAxis, (sp * dt) / BALL_R);
+    } else if (u.flight) ball.rotation.x += dt * 8;
   }
 
   // 손에 컵 쥐여 주기 — 마시는 동작은 animateAvatar 가 맡습니다
@@ -3395,9 +3742,116 @@
     if (pose !== 'lie') camMode = 'follow';
     netDirty = true;
   }
+  const GESTURE_DUR = { wave: 2.2, bow: 2.2, pat: 2.2, dance: 6, stick: 6, rps: 3.2 };
   function gesture(type) {
-    player.userData.gesture = { type, t: 0 };
+    if (type === 'dance' && player.userData.pose !== 'stand') { toast('일어선 뒤에 출 수 있어요', 1500); return; }
+    player.userData.gesture = { type, t: 0, dur: GESTURE_DUR[type] };
     store.send('act', { id: me.id, type });
+    // 춤이나 응원봉은 가까이 있는 이웃들도 따라 합니다
+    if (type === 'dance' || type === 'stick') {
+      for (const n of npcs) {
+        if (n.av.userData.pose !== 'stand' || n.av.position.distanceTo(player.position) > 9) continue;
+        n.wait = Math.max(n.wait, GESTURE_DUR[type] + 1);
+        faceTo(n.av, player);
+        setTimeout(() => { n.av.userData.gesture = { type, t: 0, dur: GESTURE_DUR[type] }; }, 300 + Math.random() * 700);
+      }
+    }
+  }
+  function faceTo(av, target) {
+    av.rotation.y = Math.atan2(target.position.x - av.position.x, target.position.z - av.position.z);
+  }
+
+  // ---------------- 가위바위보 — 가까이 있는 사람(이웃 · 다른 접속자)과
+  const RPS_E = ['✌️', '✊', '🖐️'], RPS_N = ['가위', '바위', '보'];
+  const rpsBeat = (a, b) => (a === b ? 0 : ((a - b + 3) % 3 === 1 ? 1 : -1));   // 1 이면 a 승
+  const rpsPick = (v) => ([0, 1, 2].includes(v) ? v : 0);
+  let rpsPending = null;
+  function nearestPartner(maxD = 7) {
+    let best = null, bd = maxD;
+    for (const [id, o] of others) {
+      const d = o.av.position.distanceTo(player.position);
+      if (d < bd) { bd = d; best = { kind: 'user', id, av: o.av, name: o.name || '손님' }; }
+    }
+    for (const n of npcs) {
+      const d = n.av.position.distanceTo(player.position);
+      if (d < bd) { bd = d; best = { kind: 'npc', n, av: n.av, name: n.name || '이웃' }; }
+    }
+    return best;
+  }
+  function openRps(title, onPick, ms = 12000) {
+    const box = $('#rps');
+    $('#rps-title').textContent = title;
+    box.classList.add('show');
+    const btns = box.querySelectorAll('[data-pick]');
+    const close = () => { box.classList.remove('show'); clearTimeout(box._t); btns.forEach((b) => { b.onclick = null; }); };
+    btns.forEach((b) => { b.onclick = () => { close(); onPick(Number(b.dataset.pick)); }; });
+    $('#rps-cancel').onclick = close;
+    clearTimeout(box._t);
+    box._t = setTimeout(close, ms);
+  }
+  // A 와 B 가 함께 "가위 바위 보!" — 1.5초 뒤 머리 위에 낸 손이 뜹니다. mySide: 'a' | 'b' | null
+  function rpsShow(avA, pa, avB, pb, mySide) {
+    for (const av of [avA, avB]) if (av) av.userData.gesture = { type: 'rps', t: 0, dur: GESTURE_DUR.rps };
+    sayBubble(avA, '가위, 바위, 보!');
+    setTimeout(() => {
+      // 말풍선은 걷고, 낸 손을 '바로 머리 위'(2.3m)에 띄워 2초쯤 보여 준 뒤 천천히 올라갑니다.
+      //   (2.9m 는 말풍선보다 높아서, 카메라가 가까우면 화면 위로 잘려 나갔습니다)
+      const clearBubble = (av) => { const u2 = av.userData; if (u2.bubble) { av.remove(u2.bubble); u2.bubble = null; } };
+      const up = new THREE.Vector3(0, 2.3, 0);
+      clearBubble(avA);
+      floatEmoji(RPS_E[pa], avA.position.clone().add(up), 0.85, 2.2);
+      if (!avB) return;
+      clearBubble(avB);
+      floatEmoji(RPS_E[pb], avB.position.clone().add(up), 0.85, 2.2);
+      const r = rpsBeat(pa, pb);
+      if (r !== 0) setTimeout(() => floatEmoji('🎉', (r > 0 ? avA : avB).position.clone().add(new THREE.Vector3(0.45, 2.95, 0)), 0.7, 1.8), 450);
+      if (mySide) {
+        const mine = mySide === 'a' ? r : -r;
+        const mp = mySide === 'a' ? pa : pb, tp = mySide === 'a' ? pb : pa;
+        toast(`나 ${RPS_N[mp]} · 상대 ${RPS_N[tp]} — ` + (mine > 0 ? '이겼어요! 🎉' : mine < 0 ? '졌어요 😆' : '비겼어요! 한 번 더?'), 3200);
+      }
+    }, 1500);
+  }
+  function startRps() {
+    if (rpsPending) { toast('상대가 고르기를 기다리는 중이에요', 1500); return; }
+    if (player.userData.pose !== 'stand') { toast('일어선 뒤에 할 수 있어요', 1500); return; }
+    const p = nearestPartner(8);
+    if (!p) { toast('가까이 있는 사람 곁으로 가서 해 보세요 ✌️ (8m 안)', 2400); return; }
+    // 서로 마주 보고 할 수 있게, 상대 앞 2m 까지 다가갑니다
+    {
+      const d = new THREE.Vector3(player.position.x - p.av.position.x, 0, player.position.z - p.av.position.z);
+      if (d.lengthSq() < 1e-4) d.set(0, 0, 1);
+      d.normalize();
+      const stand = p.av.position.clone().addScaledVector(d, 2.0);
+      player.position.set(stand.x, standY(stand.x, stand.z), stand.z);
+      pushOut(player.position);
+      moveTarget = null;
+      // 카메라는 옆에서 — 두 사람이 화면 왼쪽 · 오른쪽에 서서 말풍선 · 이름표가 겹치지 않습니다
+      camYaw = Math.atan2(d.x, d.z) + Math.PI / 2;
+      camPitch = 0.2;
+      camDist = 6.5;
+    }
+    faceTo(player, p.av);
+    if (p.kind === 'npc') {
+      p.n.wait = Math.max(p.n.wait, 14);           // 고르는 동안 기다려 줍니다
+      faceTo(p.av, player);
+      sayBubble(p.av, '좋아요!');
+      openRps(`${p.name}님과 가위바위보!`, (i) => {
+        const np = Math.floor(Math.random() * 3);
+        p.n.wait = Math.max(p.n.wait, 5);
+        rpsShow(player, i, p.av, np, 'a');
+        store.send('act', { id: me.id, type: 'rpsShow', a: me.id, pa: i, b: null, pb: 0 });
+      });
+    } else {
+      openRps(`${p.name}님과 가위바위보!`, (i) => {
+        rpsPending = { to: p.id, pick: i };
+        store.send('act', { id: me.id, type: 'rpsInvite', to: p.id, name: me.name });
+        toast(`${p.name}님이 고르기를 기다려요…`, 3000);
+        setTimeout(() => {
+          if (rpsPending && rpsPending.to === p.id) { rpsPending = null; toast('대답이 없어요. 다음에 다시 해 봐요', 2200); }
+        }, 15000);
+      });
+    }
   }
 
   async function writeMessage(kind) {
@@ -3480,20 +3934,25 @@
     ],
     greenhouse: (p) => [
       ['💧 물 주기', () => {
-        if (!cool('water', 3000)) return;
-        // 지금 서 있는 곳에서 '가장 가까운 화분'에 줍니다 (가운데 큰 화분 · 선반의 작은 화분)
-        let best = null, bestD = Infinity, bestW = null;
-        for (const q of (p.state.pots || [])) {
-          const w = q.local.clone().applyMatrix4(p.group.matrixWorld);
-          const d2 = Math.hypot(w.x - player.position.x, w.z - player.position.z);
-          if (d2 < bestD) { bestD = d2; best = q; bestW = w; }
-        }
-        if (best) {
-          // 그 화분 앞으로 한 걸음 (너무 멀면 화분 쪽으로 걸어가 줍니다)
-          const dir = new THREE.Vector3(player.position.x - bestW.x, 0, player.position.z - bestW.z);
-          if (dir.lengthSq() < 1e-4) dir.set(0, 0, 1);
-          dir.normalize();
-          const stand = bestW.clone().addScaledVector(dir, 1.35);
+        const pots = p.state.pots || [];
+        pickFrom('어느 화분에 물을 줄까요?', pots.map((q, i) => (q.central ? '★ 큰 화분' : String(i + 1))), (i) => {
+          // (번호표는 고르는 동안만 보입니다 — 아래 pots.map((q) => q.tag))
+          if (!cool('water', 2500)) return;
+          const best = pots[i];
+          const bestW = best.local.clone().applyMatrix4(p.group.matrixWorld);
+          // 선반 화분은 '가까운 통로'에 섭니다 — 안쪽 줄은 가운데 통로, 바깥 줄은 유리벽 쪽 통로.
+          //   (화분에서 아무 방향으로 물러서면 선반에 부딪혀 옆으로 밀려나, 테이블에 물을 주게 됩니다)
+          let stand;
+          if (!best.central) {
+            const lx = best.local.x, side = Math.sign(lx);
+            const aisleX = Math.abs(lx) < 4 ? side * 2.55 : side * 5.45;
+            stand = new THREE.Vector3(aisleX, 0, best.local.z).applyMatrix4(p.group.matrixWorld);
+          } else {
+            const dir = new THREE.Vector3(player.position.x - bestW.x, 0, player.position.z - bestW.z);
+            if (dir.lengthSq() < 1e-4) dir.set(0, 0, 1);
+            dir.normalize();
+            stand = bestW.clone().addScaledVector(dir, 1.6);
+          }
           player.position.set(stand.x, standY(stand.x, stand.z), stand.z);
           pushOut(player.position);
           moveTarget = null;
@@ -3502,11 +3961,18 @@
           camYaw = Math.atan2(-ddx, -ddz) + 0.9;
           camPitch = 0.22;
           camDist = 5.2;
-        }
-        waterEffect(true, best);
-        chime();
-        bump('water');
-        store.send('act', { id: me.id, type: 'water' });
+          waterEffect(true, best);
+          chime();
+          if (best.central) {
+            bump('water');                       // 큰 화분은 모두가 준 물로 자랍니다
+            toast('큰 화분에 물을 주었어요 💧', 2000);
+          } else {
+            growPot(i, true);
+            setTimeout(() => floatEmoji('🌱', bestW.clone().add(new THREE.Vector3(0, 0.9, 0)), 0.45), 1400);
+            toast(`${i + 1}번 화분이 쑥 자랐어요 🌱 (${best.level}번째)`, 2000);
+          }
+          store.send('act', { id: me.id, type: 'water', pot: i });
+        }, pots.map((q) => q.tag));
       }],
     ],
     cafe: (p) => [
@@ -3547,83 +4013,79 @@
         store.send('act', { id: me.id, type: 'cheer' });
       }],
     ],
-    petcafe: (p) => [
-      ['🍖 간식 주기', () => {
-        if (!cool('feed', 2500)) return;
-        // 가장 가까운 동물 쪽으로 몸을 돌려, 그 앞에 간식을 놓습니다 (등지고 주지 않도록)
-        let nearPet = null, nearD = 99;
-        for (const pt of (petCafe ? petCafe.state.pets : [])) {
-          const dd = pt.obj.position.distanceTo(player.position);
-          if (dd < nearD) { nearD = dd; nearPet = pt; }
-        }
-        const fdir = nearPet
-          ? new THREE.Vector3(nearPet.obj.position.x - player.position.x, 0, nearPet.obj.position.z - player.position.z)
-          : new THREE.Vector3(Math.sin(player.rotation.y), 0, Math.cos(player.rotation.y));
-        if (fdir.lengthSq() < 1e-4) fdir.set(0, 0, 1);
-        fdir.normalize();
-        player.rotation.y = Math.atan2(fdir.x, fdir.z);
-        camYaw = Math.atan2(-fdir.x, -fdir.z);
+    petcafe: (p) => {
+      const pets = petCafe ? petCafe.state.pets : [];
+      const choose = (title, fn) => pickFrom(title, pets.map((pt, i) => petTag(pt, i)), (i) => fn(pets[i]), pets.map((pt) => pt.tag));
+      // 고른 동물 앞으로 가서 그 동물을 바라봅니다
+      const goToPet = (pt, gap) => {
+        const d = new THREE.Vector3(pt.obj.position.x - player.position.x, 0, pt.obj.position.z - player.position.z);
+        if (d.lengthSq() < 1e-4) d.set(0, 0, 1);
+        d.normalize();
+        const stand = pt.obj.position.clone().addScaledVector(d, -gap);
+        player.position.set(stand.x, standY(stand.x, stand.z), stand.z);
+        pushOut(player.position);
+        moveTarget = null;
+        player.rotation.y = Math.atan2(d.x, d.z);
+        camYaw = Math.atan2(-d.x, -d.z);
         camPitch = 0.3;
-        crouchDown(4.5);                                          // 쪼그려 앉아서
-        player.userData.gesture = { type: 'pat', t: 0 };          // 손을 내려 놓아 줍니다
-        const spot = player.position.clone().addScaledVector(fdir, 1.25);
-        spot.y = standY(spot.x, spot.z);
-        showTreat(spot);
-        callPets(spot);
-        chime();
-        bump('happy');
-        toast('간식을 놓아 두었어요 🍖', 2400);
-      }],
-      ['🤲 쓰다듬기', () => {
-        if (!petCafe) return;
-        let best = null, bd = 9;
-        for (const pt of petCafe.state.pets) {
-          const d = pt.obj.position.distanceTo(player.position);
-          if (d < bd) { bd = d; best = pt; }
-        }
-        if (!best || bd > 9) { toast('멍냥 쉼터 안으로 들어가서 쓰다듬어 주세요', 2000); return; }
-        if (!cool('pat', 1500)) return;
-        const pdir = new THREE.Vector3(best.obj.position.x - player.position.x, 0, best.obj.position.z - player.position.z);
-        if (pdir.lengthSq() > 1e-4) {
-          pdir.normalize();
-          const stand = best.obj.position.clone().addScaledVector(pdir, -1.05);
-          player.position.set(stand.x, standY(stand.x, stand.z), stand.z);
-          player.rotation.y = Math.atan2(pdir.x, pdir.z);
-          camYaw = Math.atan2(-pdir.x, -pdir.z);
-          camPitch = 0.3;
-          camDist = 4.6;
-        }
-        moveTarget = null;
-        crouchDown(4.5);
-        // 한 마리만 — 그 자리에 앉아 고개를 들고 꼬리를 흔듭니다 (뛰지 않습니다)
-        best.happy = 4;
-        best.mood = 'pet';
-        best.state = 'rest';
-        best.phase = Math.random() * 6;
-        player.userData.gesture = { type: 'pat', t: 0 };
-        floatEmoji('💖', best.obj.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 0.42);
-        chime();
-        bump('happy');
-      }],
-      ['🎾 공 던지기', () => {
-        if (!petCafe || !cool('ball', 3000)) return;
-        throwBall();
-      }],
-    ],
+        camDist = 4.6;
+        return d;
+      };
+      return [
+        ['🍖 간식 주기', () => choose('누구에게 간식을 줄까요?', (pt) => {
+          if (!cool('feed', 2000)) return;
+          const d = goToPet(pt, 1.6);
+          crouchDown(4.5);                                          // 쪼그려 앉아서
+          player.userData.gesture = { type: 'pat', t: 0 };          // 손을 내려 놓아 줍니다
+          const spot = player.position.clone().addScaledVector(d, 0.8);
+          spot.y = standY(spot.x, spot.z);
+          showTreat(spot);
+          // 고른 한 마리만 다가와 먹습니다
+          petCafe.state.feedSpot = spot;
+          pt.state = 'come'; pt.mood = 'eat'; pt.happy = 0; pt.delay = 0.2; pt.phase = Math.random() * 6;
+          chime();
+          bump('happy');
+          toast(`${petTag(pt, pets.indexOf(pt))}에게 간식을 주었어요 🍖`, 2200);
+        })],
+        ['🤲 쓰다듬기', () => choose('누구를 쓰다듬을까요?', (pt) => {
+          if (!cool('pat', 1500)) return;
+          goToPet(pt, 1.05);
+          crouchDown(4.5);
+          // 그 자리에 앉아 고개를 들고 꼬리를 흔듭니다
+          pt.happy = 4;
+          pt.mood = 'pet';
+          pt.state = 'rest';
+          pt.phase = Math.random() * 6;
+          if (ball && ball.userData.carriedBy === pt) ball.userData.carriedBy = null;
+          player.userData.gesture = { type: 'pat', t: 0 };
+          floatEmoji('💖', pt.obj.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 0.42);
+          chime();
+          bump('happy');
+        })],
+        ['🎾 공 던지기', () => choose('누구에게 공을 던질까요?', (pt) => {
+          if (!petCafe || !cool('ball', 2500)) return;
+          throwBall(pt);
+        })],
+      ];
+    },
     plaza: (p) => [
-      ['🪑 연못가에 앉기', () => {
-        // 지금 서 있는 쪽의 테두리에 앉습니다
-        const ang = Math.atan2(player.position.x, player.position.z);
-        const r = 3.98;                       // 돌 테두리 한가운데
-        player.position.set(Math.sin(ang) * r, 0.7, Math.cos(ang) * r);
-        player.rotation.y = Math.atan2(-player.position.x, -player.position.z);
+      ['🪑 벤치에 앉기', () => {
+        // 가장 가까운 벤치에 앉아 연못을 바라봅니다
+        let b = null, bd = Infinity;
+        for (const c of (pond.benches || [])) {
+          const d = Math.hypot(c.x - player.position.x, c.z - player.position.z);
+          if (d < bd) { bd = d; b = c; }
+        }
+        if (!b) return;
+        player.position.set(b.x, standY(b.x, b.z), b.z);
         moveTarget = null;
-        sitLift = 0.7;                         // 연못 돌 테두리 높이
+        sitLift = 0.55;                        // 벤치 좌석 높이 (언덕 벤치와 같은 벤치)
         setPose('sit');
-        camYaw = ang;              // 카메라는 연못 바깥(등 뒤)에서 — 분수 안으로 들어가지 않게
+        player.rotation.y = b.ry;
+        camYaw = b.ry + Math.PI + 0.35;        // 등 뒤에서 살짝 비껴 — 연못과 분수가 함께 보이게
         camPitch = 0.26;
         camDist = 6;
-        toast('물소리를 들으며 잠깐 쉬어요 🪷', 2600);
+        toast('벤치에 앉아 물소리를 들으며 쉬어요 🪷', 2600);
       }],
       ['💧 물소리 켜기 · 끄기', () => toggleFountain()],
     ],
@@ -3898,7 +4360,7 @@
     if (p === currentPlace && !force) return;
     currentPlace = p;
     const panel = $('#panel');
-    if (!p) { panel.classList.remove('show'); return; }
+    if (!p) { panel.classList.remove('show'); document.body.classList.remove('panel-open'); return; }
     panel.replaceChildren(el('h3', { textContent: p.name }), el('p', { textContent: p.desc }), el('div', { className: 'info', textContent: infoText(p) }));
     const row = el('div', { className: 'actions' });
     for (const [label, fn] of (actions[p.type] || (() => []))(p)) row.append(el('button', { type: 'button', textContent: label, onclick: fn }));
@@ -3914,6 +4376,7 @@
       panel.append(keys);
     }
     panel.classList.add('show');
+    document.body.classList.add('panel-open');
   }
 
   // 길 찾기 버튼
@@ -3942,7 +4405,9 @@
   const handlers = {
     onPresence(ids) {
       const n = ids.length;
-      $('#people').textContent = n <= 1 ? '지금은 나 혼자 쉬는 중' : `지금 ${n}명이 함께 쉬고 있어요`;
+      presentIds = ids.slice();
+      $('#people').textContent = n <= 1 ? '👥 지금은 나 혼자 쉬는 중' : `👥 지금 ${n}명이 함께 쉬고 있어요 ▾`;
+      if ($('#who').classList.contains('open')) renderWho();
       for (const [id, o] of others) if (!ids.includes(id)) { scene.remove(o.av); others.delete(id); }
       if (!roomChecked && n > 0) {
         roomChecked = true;
@@ -3974,6 +4439,7 @@
         scene.add(o.av);
         others.set(m.id, o);
       }
+      o.name = String(m.name || '손님').slice(0, 20);
       o.tx = Number(m.x) || 0;
       o.tz = Number(m.z) || 0;
       o.ry = Number(m.ry) || 0;
@@ -3982,10 +4448,32 @@
     onAct(a) {
       if (!a || a.id === me.id) return;
       const o = others.get(a.id);
-      if ((a.type === 'bow' || a.type === 'wave') && o) o.av.userData.gesture = { type: a.type, t: 0 };
+      if (['bow', 'wave', 'dance', 'stick'].includes(a.type) && o) o.av.userData.gesture = { type: a.type, t: 0, dur: GESTURE_DUR[a.type] };
+      // 가위바위보 — 초대 → 대답(상대가 고른 것) → 건 사람이 결과를 모두에게 보여 줌
+      if (a.type === 'rpsInvite' && a.to === me.id && o) {
+        faceTo(player, o.av);
+        openRps(`${String(a.name || '손님').slice(0, 20)}님이 가위바위보를 걸었어요!`,
+          (i) => store.send('act', { id: me.id, type: 'rpsReply', to: a.id, pick: i }));
+      }
+      if (a.type === 'rpsReply' && a.to === me.id && o && rpsPending && rpsPending.to === a.id) {
+        const pa = rpsPending.pick, pb = rpsPick(a.pick);
+        rpsPending = null;
+        faceTo(player, o.av);
+        rpsShow(player, pa, o.av, pb, 'a');
+        store.send('act', { id: me.id, type: 'rpsShow', a: me.id, pa, b: a.id, pb });
+      }
+      if (a.type === 'rpsShow' && o) {
+        const avB = a.b === me.id ? player : (a.b && others.get(a.b) ? others.get(a.b).av : null);
+        rpsShow(o.av, rpsPick(a.pa), avB, rpsPick(a.pb), a.b === me.id ? 'b' : null);
+      }
       if (a.type === 'note' && Number.isInteger(a.key) && a.key >= 0 && a.key < 8) playKey(a.key, true);
       if (a.type === 'cheer' && o) floatEmoji('💛', o.av.position.clone().add(new THREE.Vector3(0, 2.8, 0)));
-      if (a.type === 'water') waterEffect(false);
+      if (a.type === 'water') {
+        const gh0 = byType('greenhouse')[0];
+        const q = gh0 && Number.isInteger(a.pot) ? gh0.state.pots[a.pot] : null;
+        waterEffect(false, q);
+        if (q && !q.central) growPot(a.pot, false);
+      }
       if (a.type === 'counter' && counters[a.name] !== undefined) applyCounter(a.name, Number(a.value) || 0);
     },
     onChat(c) {
@@ -4014,6 +4502,8 @@
   // ------------------------------------------------------------------
   let camYaw = 0, camPitch = 0.34, camDist = 9;
   let camDistNow = 9;
+  let introOn = true;     // 시작 화면에서는 카메라가 광장을 천천히 돕니다
+  let introGlow = 0.16;   // 시작 화면은 조금 더 환하게 — 들어가면 천천히 원래 밝기로
   let detour = 1, detourT = 0, noWayT = 0, detouring = false;   // 벽을 돌아갈 때 쓰는 상태
   let bestD = Infinity, stuckT = 0;                             // 목적지에 가까워지는지 감시
   const keys = {};
@@ -4127,6 +4617,24 @@
   };
 
   $('#g-wave').onclick = () => gesture('wave');
+  $('#g-dance').onclick = () => gesture('dance');
+  $('#g-stick').onclick = () => gesture('stick');
+  $('#g-rps').onclick = () => startRps();
+  // 몇 명인지 누르면 — 지금 들어와 있는 사람들의 닉네임
+  $('#people').onclick = () => {
+    const box = $('#who');
+    box.classList.toggle('open');
+    if (box.classList.contains('open')) renderWho();
+    layoutPlaces();
+  };
+  // 길 찾기 패널은 위의 정보 상자(목록을 펼치면 길어짐) 바로 아래 14px 띄워서
+  function layoutPlaces() {
+    const pl = $('#places');
+    if (window.innerWidth <= 760) { pl.style.top = ''; return; }   // 휴대폰은 따로 배치
+    pl.style.top = Math.round($('#hud').getBoundingClientRect().bottom + 14) + 'px';
+  }
+  window.addEventListener('resize', layoutPlaces);
+  setTimeout(layoutPlaces, 0);
   $('#g-bow').onclick = () => { if (player.userData.pose === 'stand') gesture('bow'); else toast('일어선 뒤에 인사할 수 있어요', 1500); };
   $('#btn-help').onclick = () => $('#help').classList.add('show');
   $('#help-close').onclick = () => $('#help').classList.remove('show');
@@ -4175,6 +4683,7 @@
   const enterBtn = $('#enter');
   enterBtn.disabled = false;
   enterBtn.textContent = '들어가기';
+  $('#intro').classList.add('ready');   // 대표 이미지를 걷고 실제 3D 장면을 보여 줍니다
   const nameInput = $('#intro-name');
   if (nameInput) {
     nameInput.value = me.name;
@@ -4207,6 +4716,8 @@
     startAmbient();                      // 들어가면 배경 음악이 천천히 켜집니다
     $('#btn-sound').textContent = '🔊 소리 켜짐';
     $('#intro').classList.remove('show');
+    document.body.classList.remove('intro');
+    introOn = false;
     store.connect(handlers);
     netDirty = true;
   };
@@ -4465,7 +4976,8 @@
           n.lastD = undefined;
           n.stuck = 0;
           n.walkT = 0;
-          if (Math.random() < 0.3) u.pose = 'sit';
+          // (예전엔 30% 확률로 그 자리에 앉았는데, 의자가 없는 곳이면 허공에 앉은 것처럼 보여 없앴습니다.
+          //  멈춰 서서 둘러봅니다)
         } else {
           const bx0 = a.position.x, bz0 = a.position.z;
           a.position.x += (dx / d) * n.speed * dt;
@@ -4519,15 +5031,9 @@
     }
     if (window.__cat) animatePet(window.__cat, dt, false);
 
-    // 날아가는 공
-    if (ball && ball.visible && ball.userData.flight) {
-      const f = ball.userData.flight;
-      f.t += dt * 1.6;
-      const e = Math.min(1, f.t);
-      ball.position.lerpVectors(f.from, f.to, e);
-      ball.position.y += Math.sin(e * Math.PI) * 1.6;
-      if (e >= 1) ball.userData.flight = null;
-    }
+    // 공 — 날아가고 · 통통 튀고 · 굴러가고 · 강아지가 물고 다님
+    updateBall(dt);
+    updateStickLight(dt);
 
     // 멍냥 쉼터 동물들 — 쉬다가, 부르면 달려오고, 쓰다듬으면 좋아합니다
     if (petCafe && petCafe.state.pets) {
@@ -4564,6 +5070,10 @@
           if (pt.happy <= 0) {
             o.userData.head.rotation.x = 0;
             o.rotation.z = 0;
+            if (ball && ball.userData.carriedBy === pt) {      // 다 놀았으면 공을 내려놓습니다
+              ball.userData.carriedBy = null;
+              ball.userData.roll = { vx: Math.sin(o.rotation.y) * 0.6, vz: Math.cos(o.rotation.y) * 0.6, hop: 0.12, hopT: 0 };
+            }
             if (pt.mood === 'eat' && treat) treat.visible = false;
           }
           continue;
@@ -4576,18 +5086,38 @@
           speed = 2.4 + (pt.phase % 1) * 0.8;         // 속도도 조금씩 다르게
           if (pt.delay > 0) { pt.delay -= dt; tx = o.position.x; tz = o.position.z; }
         }
-        if (pt.state === 'fetch' && ball) { tx = ball.position.x; tz = ball.position.z; speed = 3.2; }
+        if (pt.state === 'watch') {
+          // 공이 날아가고 구르는 동안은 제자리에서 공을 눈으로 따라갑니다
+          tx = o.position.x; tz = o.position.z;
+          if (ball && ball.visible && ball.userData.thrownTo === pt) {
+            o.rotation.y = lerp(o.rotation.y, Math.atan2(ball.position.x - o.position.x, ball.position.z - o.position.z), Math.min(1, dt * 5));
+            if (!ball.userData.flight && !ball.userData.roll && !ball.userData.carriedBy) pt.state = 'fetch';   // 멈췄다 — 가지러!
+          }
+        }
+        if (pt.state === 'fetch' && ball) { tx = ball.position.x; tz = ball.position.z; speed = 3.4; }
+        if (pt.state === 'bring') { tx = player.position.x; tz = player.position.z; speed = 2.6; }   // 물고 와서 나에게
         const dx = tx - o.position.x, dz = tz - o.position.z;
         const d = Math.hypot(dx, dz);
-        const stop = pt.state === 'come' ? 1.1 : 0.4;
+        const stop = pt.state === 'come' || pt.state === 'bring' ? 1.1 : 0.4;
         if (d > stop) {
           mv = true;
           o.position.x += (dx / d) * speed * dt;
           o.position.z += (dz / d) * speed * dt;
           o.rotation.y = lerp(o.rotation.y, Math.atan2(dx, dz), Math.min(1, dt * 6));
-        } else if (pt.state === 'come' || pt.state === 'fetch') {
-          if (pt.state === 'fetch' && ball) { ball.visible = false; bump('happy'); }
-          pt.mood = pt.state === 'fetch' ? 'play' : (pt.mood || 'eat');
+        } else if (pt.state === 'fetch' && ball) {
+          ball.userData.roll = null;
+          ball.userData.carriedBy = pt;              // 입에 물고
+          pt.state = 'bring';                        // 나에게 가져옵니다
+        } else if (pt.state === 'come' || pt.state === 'bring') {
+          if (pt.state === 'bring' && ball && ball.userData.carriedBy === pt) {
+            // 내 앞에 공을 툭 내려놓고 신나서 폴짝
+            ball.userData.carriedBy = null;
+            ball.userData.thrownTo = null;
+            ball.userData.roll = { vx: Math.sin(o.rotation.y) * 0.5, vz: Math.cos(o.rotation.y) * 0.5, hop: 0.1, hopT: 0 };
+            floatEmoji('🎾', o.position.clone().add(new THREE.Vector3(0, 1, 0)), 0.4);
+            bump('happy');
+          }
+          pt.mood = pt.state === 'bring' ? 'play' : (pt.mood || 'eat');
           pt.state = 'rest';
           pt.happy = 3 + Math.random() * 1.5;
           pt.t = 0;
@@ -4614,6 +5144,7 @@
         pl.scale.setScalar(lerp(pl.scale.x, target, Math.min(1, dt * 2)));
         pl.rotation.y = Math.sin(t * 0.6) * 0.08;
         for (const q of (p.state.pots || [])) {
+          if (q.bush) q.bush.scale.setScalar(lerp(q.bush.scale.x, 1 + Math.min(1.3, (q.level || 0) * 0.12), Math.min(1, dt * 1.5)));
           if (!q.bush || !q.bush.userData.shake) continue;
           q.bush.userData.shake -= dt * 0.9;
           q.bush.rotation.z = Math.sin(t * 22) * 0.07 * Math.max(0, q.bush.userData.shake);
@@ -4647,13 +5178,21 @@
         a.needsUpdate = true;
       }
       if (p.type === 'field') {
-        const b = p.state.bird, a = t * 0.18;
+        const b = p.state.bird, a = t * 0.07;
         b.obj.visible = night.mix < 0.25;        // 별 보는 동안에는 새가 날지 않습니다
-        b.obj.position.set(p.x + Math.cos(a) * 20, 24 + Math.sin(t * 0.5) * 1.5, p.z + Math.sin(a) * 20);
-        b.obj.rotation.y = -a;
-        const f = Math.sin(t * 3) * 0.45;
-        b.wl.rotation.z = f;
-        b.wr.rotation.z = -f;
+        // 넓고 느린 원을 그리며, 오르내림도 천천히
+        b.obj.position.set(p.x + Math.cos(a) * 34, 19 + Math.sin(t * 0.23) * 2.2, p.z + 20 + Math.sin(a) * 30);
+        b.obj.rotation.set(0, -a, 0.18);          // 원 안쪽으로 살짝 기울여 선회
+        for (const k of b.birds) {
+          // 날갯짓 2초 → 활공 3초를 반복 (새마다 박자가 조금씩 다름)
+          const ph = ((t + k.off) % 5) / 5;
+          const flapAmt = ph < 0.4 ? Math.sin(ph / 0.4 * Math.PI) : 0;
+          const f = Math.sin((t + k.off) * 6.5) * 0.55 * flapAmt + 0.1 * (1 - flapAmt);
+          k.wl.rotation.z = f;
+          k.wr.rotation.z = -f;                 // 거울로 뒤집힌 날개라 반대로 돌려야 같이 올라갑니다
+          k.obj.position.y = k.base.y + Math.sin((t + k.off) * 0.9) * 0.25 - f * 0.08;
+          k.obj.position.x = k.base.x + Math.sin((t + k.off) * 0.37) * 0.35;
+        }
         for (const s of p.state.stars.children) {
           const k = 3 + Math.sin(t * 1.5 + s.userData.phase) * 0.5;
           s.scale.set(k, k, 1);
@@ -4670,6 +5209,16 @@
     for (let i = floaters.length - 1; i >= 0; i--) {
       const f = floaters[i];
       f.t += dt;
+      if (f.hold) {
+        // 톡 커지며 나타나 → 머리 위에서 살짝 흔들리며 머물고 → 천천히 떠오르며 사라짐
+        const pop = f.t < 0.25 ? 0.6 + 0.6 * (f.t / 0.25) : 1.2 - 0.2 * smooth(0.25, 0.45, f.t);
+        f.s.scale.copy(f.base).multiplyScalar(pop);
+        if (f.t < f.hold) f.s.position.y += Math.sin(f.t * 4) * 0.002;
+        else f.s.position.y += dt * 0.55;
+        f.s.material.opacity = 1 - smooth(f.hold, f.hold + 1.6, f.t);
+        if (f.t > f.hold + 1.6) { scene.remove(f.s); floaters.splice(i, 1); }
+        continue;
+      }
       f.s.position.y += dt * 1.2;
       f.s.position.x += f.vx * dt;
       f.s.material.opacity = 1 - f.t / 2;
@@ -4690,9 +5239,14 @@
         for (let k = 0; k < 2; k++) {
           const d = new THREE.Mesh(dropGeo, dropMat);
           d.scale.set(1, 1.3, 1);
-          d.position.set(pour.spout.x + (Math.random() - 0.5) * 0.16, pour.spout.y, pour.spout.z + (Math.random() - 0.5) * 0.16);
+          d.position.set(pour.spout.x + (Math.random() - 0.5) * 0.06, pour.spout.y, pour.spout.z + (Math.random() - 0.5) * 0.06);
           scene.add(d);
-          drops.push({ d, vy: -0.6, vx: -0.75 - Math.random() * 0.3, vz: (Math.random() - 0.5) * 0.25, gh: pour.gh, landY: pour.landY });
+          // 고른 화분의 흙(반지름 약 0.2 안)에 떨어지도록 포물선을 계산합니다
+          const ax = pour.aim.x + (Math.random() - 0.5) * 0.3, az = pour.aim.z + (Math.random() - 0.5) * 0.3;
+          const dh = pour.landY - d.position.y;                         // 올라가야 할 높이(음수면 내려감)
+          const vy0 = Math.max(0.9, Math.sqrt(Math.max(0, 22 * dh)) + 0.6);
+          const T = (vy0 + Math.sqrt(Math.max(0, vy0 * vy0 - 22 * dh))) / 11;   // y0 + vy0·T − 5.5·T² = landY
+          drops.push({ d, vy: vy0, vx: (ax - d.position.x) / T, vz: (az - d.position.z) / T, gh: pour.gh, landY: pour.landY, rising: true });
         }
       }
       if (pour.t > 2.3) { pour = null; takeCan(player); player.userData.watering = 0; }
@@ -4703,8 +5257,9 @@
       d.d.position.x += d.vx * dt;
       d.d.position.z += d.vz * dt;
       d.d.position.y += d.vy * dt;
-      const landY = (pour && pour.landY) || d.landY || 1.1;
-      if (d.d.position.y < landY) {
+      const landY = d.landY || 1.1;
+      if (d.vy < 0) d.rising = false;
+      if (!d.rising && d.d.position.y < landY) {
         splash(d.d.position.x, landY, d.d.position.z);
         scene.remove(d.d);
         drops.splice(i, 1);
@@ -4757,7 +5312,16 @@
       pond.jetGroup.rotation.y = Math.sin(t * 0.25) * 0.06;
       pond.foam[0].scale.setScalar(1 + Math.sin(t * 2.3) * 0.02);
       pond.foam[1].scale.setScalar(1 + Math.sin(t * 1.9 + 1) * 0.015);
-      for (const l of pond.lily) l.m.position.y = l.y + Math.sin(t * 1.3 + l.p) * 0.018;
+      // 연잎 — 물결 따라 천천히 흘러가며 살짝 흔들립니다 (빙글빙글 돌지 않게 회전은 아주 조금)
+      for (const f of new Set(pond.lily.map((l) => l.flow))) {
+        f.a += dt * f.sp;
+        f.cr = f.rr + Math.sin(t * 0.21 + f.p) * 0.18;          // 안팎으로 조금씩
+      }
+      for (const l of pond.lily) {
+        const f = l.flow;
+        l.m.position.set(Math.cos(f.a) * f.cr + l.dx, l.y + Math.sin(t * 1.1 + f.p) * 0.006, Math.sin(f.a) * f.cr + l.dz);
+        if (l.dx === 0) l.m.rotation.z += dt * f.spin;
+      }
       for (const k of pond.koi) {
         k.a += dt * k.sp;
         k.m.position.set(Math.cos(k.a) * k.r, 0.3 + Math.sin(t * 1.1 + k.a) * 0.04, Math.sin(k.a) * k.r);
@@ -4789,7 +5353,13 @@
 
     // 카메라
     const head = tmp.set(player.position.x, player.position.y + 1.5, player.position.z);
-    if (camMode === 'lie') {
+    if (introOn) {
+      // 시작 화면 — 분수를 중심으로 천천히 한 바퀴 (오른쪽에 장면이 오도록 살짝 비껴 봄)
+      const a = t * 0.05 + 0.6;
+      const cx = Math.sin(a) * 27, cz = Math.cos(a) * 27;
+      camera.position.set(cx, groundY(cx, cz) + 7.5 + Math.sin(t * 0.13) * 0.8, cz);
+      camera.lookAt(Math.cos(a) * -7.5, 2.2, -Math.sin(a) * -7.5);
+    } else if (camMode === 'lie') {
       camera.position.set(player.position.x, player.position.y + 0.7, player.position.z);
       const p = Math.max(camPitch, 0.5);
       camera.lookAt(camera.position.x - Math.sin(camYaw) * Math.cos(p), camera.position.y + Math.sin(p), camera.position.z - Math.cos(camYaw) * Math.cos(p));
@@ -4808,6 +5378,8 @@
       camera.lookAt(head.x, head.y - 0.15, head.z);
     }
     sky.position.set(camera.position.x, 0, camera.position.z);
+    if (!introOn && introGlow > 0.001) introGlow = lerp(introGlow, 0, Math.min(1, dt * 1.2));
+    renderer.toneMappingExposure = 1.0 - night.mix * 0.18 + introGlow;
 
     // 네트워크 (약 6회/초)
     // 네트워크 — 무료 요금제의 '실시간 메시지 수'를 아끼려고 꼭 필요할 때만 보냅니다.
