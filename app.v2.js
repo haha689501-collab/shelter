@@ -284,7 +284,9 @@
   const scene = new THREE.Scene();
   // 거리에 따라 서서히 옅어지는 안개 — 먼 산이 보일 만큼은 남겨 둡니다.
   scene.fog = new THREE.FogExp2(T.fog, 0.0026);
-  const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 800);
+  // 세로 화면(휴대폰)은 시야를 넓혀 장소가 위아래로 잘리지 않게 합니다
+  const fovFor = (aspect) => (aspect < 0.8 ? 62 : 48);
+  const camera = new THREE.PerspectiveCamera(fovFor(window.innerWidth / window.innerHeight), window.innerWidth / window.innerHeight, 0.1, 800);
 
   const WIND = { value: 0 };   // 바람 — 풀과 꽃이 같은 박자로 흔들리게
   const tmpV = new THREE.Vector3();
@@ -3829,7 +3831,7 @@
       // 카메라는 옆에서 — 두 사람이 화면 왼쪽 · 오른쪽에 서서 말풍선 · 이름표가 겹치지 않습니다
       camYaw = Math.atan2(d.x, d.z) + Math.PI / 2;
       camPitch = 0.2;
-      camDist = 6.5;
+      camDist = window.innerWidth < window.innerHeight ? 10 : 6.5;   // 휴대폰 세로 화면은 더 멀리서
     }
     faceTo(player, p.av);
     if (p.kind === 'npc') {
@@ -4513,6 +4515,8 @@
     keys[e.code] = true;
     if (currentPlace && currentPlace.type === 'music' && /^Digit[1-8]$/.test(e.code)) playKey(Number(e.code.slice(5)) - 1);
     if (e.code === 'Escape') { stopBreath(); $('#help').classList.remove('show'); }
+    // C — 시점을 캐릭터 뒤로 (눌렀다 바로 떼도 놓치지 않게 여기서 바로 처리)
+    if (e.code === 'KeyC' && !introOn && camMode !== 'lie') { camYaw = player.rotation.y + Math.PI; camPitch = 0.34; }
   });
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
   window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
@@ -4624,6 +4628,7 @@
   $('#people').onclick = () => {
     const box = $('#who');
     box.classList.toggle('open');
+    $('#hud').classList.toggle('expanded', box.classList.contains('open'));   // 휴대폰: 방 코드 줄도 이때만
     if (box.classList.contains('open')) renderWho();
     layoutPlaces();
   };
@@ -4645,7 +4650,7 @@
     muted = !muted;
     if (master) master.gain.setTargetAtTime(muted ? 0 : 0.8, actx.currentTime, 0.2);
     if (!muted) startAmbient();
-    $('#btn-sound').textContent = muted ? '🔇 소리 꺼짐' : '🔊 소리 켜짐';
+    $('#btn-sound').innerHTML = muted ? '🔇<span> 소리 꺼짐</span>' : '🔊<span> 소리 켜짐</span>';
   };
   $('#myname').textContent = me.name;
   $('#rename').onclick = () => {
@@ -4662,6 +4667,7 @@
   };
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
+    camera.fov = fovFor(camera.aspect);
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     if (composer) composer.setSize(window.innerWidth, window.innerHeight);
@@ -4714,7 +4720,7 @@
     ensureAudio();
     if (actx && actx.state === 'suspended') actx.resume();
     startAmbient();                      // 들어가면 배경 음악이 천천히 켜집니다
-    $('#btn-sound').textContent = '🔊 소리 켜짐';
+    $('#btn-sound').innerHTML = '🔊<span> 소리 켜짐</span>';
     $('#intro').classList.remove('show');
     document.body.classList.remove('intro');
     introOn = false;
@@ -5349,6 +5355,15 @@
         l.position.set(best[i].position.x, best[i].position.y + 2.1, best[i].position.z);
         l.intensity = lerp(l.intensity, 20 * (1 - smooth(4, 18, bestD[i])), Math.min(1, dt * 4));
       });
+    }
+
+    // 단축키로 시점 돌리기 — Q/E 좌우로 돌기 · R/F 위아래 (C 는 keydown 에서)
+    if (!typing() && !introOn) {
+      if (keys.KeyQ) camYaw += dt * 1.9;
+      if (keys.KeyE) camYaw -= dt * 1.9;
+      const lie = camMode === 'lie';
+      if (keys.KeyR) camPitch = clamp(camPitch + dt * 1.1, lie ? 0.5 : 0.04, lie ? 1.45 : 1.2);
+      if (keys.KeyF) camPitch = clamp(camPitch - dt * 1.1, lie ? 0.5 : 0.04, lie ? 1.45 : 1.2);
     }
 
     // 카메라

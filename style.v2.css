@@ -216,7 +216,7 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
 
 @media (max-width: 760px) {
   /* 위쪽 — 정보는 작게, 버튼은 아이콘 위주로 */
-  #hud { top: 8px; left: 8px; padding: 7px 10px; border-radius: 12px; max-width: 46vw; gap: 1px; }
+  #hud { top: 8px; left: 8px; padding: 7px 10px; border-radius: 12px; max-width: calc(100vw - 236px); min-width: 140px; gap: 1px; }
   #hud .title { font-size: 14px; }
   #hud .meta { font-size: 10.5px; }
   #hud .me { font-size: 10.5px; line-height: 1.5; }
@@ -242,10 +242,27 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
   #panel .actions { gap: 6px; margin-top: 9px; }
   #panel .actions button { padding: 9px 11px; font-size: 12.5px; }
   #panel .keys button { height: 54px; font-size: 11px; }
+  /* 휴대폰은 장소가 잘 보이도록 패널을 얇게 — 설명은 숨기고, 버튼은 한 줄로 옆으로 밀어 봅니다 */
+  #panel { max-height: 40vh; padding: 10px 12px; }
+  #panel p { display: none; }
+  #panel h3 { display: inline; font-size: 15px; margin-right: 6px; }
+  #panel .info { display: inline; margin-top: 0; font-size: 11px; }
+  #panel .actions { flex-wrap: nowrap; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  #panel .actions::-webkit-scrollbar { display: none; }
+  #panel .actions button { white-space: nowrap; flex: 0 0 auto; padding: 8px 11px; }
+  /* 위쪽 정보 상자 — 제목 · 몇 명만. 방 코드 · 초대는 '몇 명'을 누르면 */
+  #hud .me { display: none; }
+  #hud.expanded .me { display: block; }
 
   /* 인사 버튼 — 패널과 겹치지 않게 패널 위로 */
-  #gestures { bottom: auto; top: 92px; left: 8px; padding: 5px; gap: 4px; }
-  #gestures button { padding: 7px 10px; font-size: 12px; }
+  /* 손짓 — 오른쪽 가장자리에 그림만 세로로 (화면 가운데를 가리지 않게) */
+  #gestures { bottom: auto; top: 54px; right: 8px; left: auto; flex-direction: column; padding: 4px; gap: 4px; border-radius: 16px; }
+  #gestures button { padding: 7px 8px; font-size: 17px; line-height: 1; text-align: center; }
+  #gestures button span { display: none; }
+  /* 위쪽 버튼 — 그림만 (길찾기만 글자 유지) */
+  .iconbtn span { display: none; }
+  #btn-places b { font-weight: 700; }
+  #places { z-index: 9; }
 
   /* 대화창 — 화면 아래 절반 */
   #chat { left: 8px; right: 8px; bottom: 8px; width: auto; z-index: 9; }
@@ -257,7 +274,9 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
   #breath .text { font-size: 17px; }
 
   /* 토스트 · 모달 */
-  #toast { top: 54px; font-size: 13px; padding: 9px 14px; }
+  /* 알림 — 정보 상자 아래, 오른쪽 손짓 막대와 겹치지 않게 */
+  #toast { top: 96px; left: 8px; right: 60px; max-width: none; transform: translate(0, -12px); font-size: 13px; padding: 9px 14px; border-radius: 16px; }
+  #toast.show { transform: translate(0, 0); }
   #roomfull { top: 100px; }
   #modal .box, #help .box, #intro .box { padding: 18px; }
   #intro h1 { font-size: 36px; }
@@ -296,7 +315,6 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
 #rps .picks button:hover { background: rgba(255, 213, 154, .28); transform: translateY(-3px); }
 #rps .cancel { margin-top: 10px; background: none; border: none; color: #fff; opacity: .6; font-size: 12px; text-decoration: underline; cursor: pointer; }
 @media (max-width: 640px) {
-  #gestures { flex-wrap: wrap; max-width: calc(100vw - 16px); }
   #rps { bottom: 20px; }
   #rps .picks button { width: 66px; font-size: 26px; }
 }
