@@ -166,8 +166,10 @@
 
   const params = new URLSearchParams(location.search);
   // 주소는 ?room=CODE 또는 /room/CODE 둘 다 됩니다
-  const pathCode = (location.pathname.match(/\/room\/([A-Za-z0-9-]+)/) || [])[1];
-  const room = (params.get('room') || pathCode || 'main').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 12) || 'MAIN';
+  const pathCode = (decodeURIComponent(location.pathname).match(/\/room\/([A-Za-z0-9가-힣-]+)/) || [])[1];
+  // 방 코드 — 영문 · 숫자 · 한글 (예전엔 한글을 지워서 '가족' 같은 코드가 빈칸 → 공개 방(MAIN)이 되었음)
+  const roomCode = (v) => String(v || '').replace(/[^a-zA-Z0-9가-힣-]/g, '').toUpperCase().slice(0, 12);
+  const room = roomCode(params.get('room') || pathCode || 'main') || 'MAIN';
 
   // ------------------------------------------------------------------
   // 저장소: 혼자 모드(localStorage) / 함께 모드(Supabase)
@@ -5118,12 +5120,17 @@
   $('#room-change').onclick = async () => {
     const raw = await askText('들어갈 방 코드 (비우면 공개 방)', '예) FAMILY');
     if (raw === null) return;
-    const want = String(raw).replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 12) || 'MAIN';
+    const code = roomCode(raw);
+    if (String(raw).trim() && !code) { toast('방 코드는 한글 · 영문 · 숫자로 적어 주세요', 2400); return; }
+    const want = code || 'MAIN';
     localStorage.setItem('shelter:lastRoom', want);
-    if (want !== room) location.href = location.pathname.replace(/\/room\/.*/, '') + '?room=' + want;
+    if (want === room) { toast(`이미 "${want}" 방에 있어요`, 2000); return; }
+    toast(`"${want}" 방으로 옮겨 가요…`, 2000);
+    const u = new URL(location.href); u.pathname = u.pathname.replace(/\/room\/.*/, '/'); u.search = '?room=' + encodeURIComponent(want);
+    location.assign(u.toString());
   };
   $('#room-copy').onclick = async () => {
-    const url = location.origin + location.pathname.replace(/\/room\/.*/, '') + '?room=' + room;
+    const url = location.origin + location.pathname.replace(/\/room\/.*/, '') + '?room=' + encodeURIComponent(room);
     try { await navigator.clipboard.writeText(url); toast('초대 주소를 복사했어요 — 친구에게 붙여넣기 하세요', 3000); }
     catch (e) { toast(url, 5000); }
   };
@@ -5230,10 +5237,10 @@
   enterBtn.onclick = () => {
     // 다른 방 코드를 적었으면 그 방으로 들어갑니다
     if (codeInput) {
-      const code = codeInput.value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 12);
+      const code = roomCode(codeInput.value);
       const want = code || 'MAIN';
       localStorage.setItem('shelter:lastRoom', want);
-      if (want !== room) { location.href = location.pathname.replace(/\/room\/.*/, '') + '?room=' + want; return; }
+      if (want !== room) { location.href = location.pathname.replace(/\/room\/.*/, '') + '?room=' + encodeURIComponent(want); return; }
     }
     // 적어 둔 닉네임을 내 이름으로 (비워 두면 처음 받은 별명 그대로)
     if (nameInput) {
