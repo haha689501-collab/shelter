@@ -337,7 +337,12 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
 @media (min-width: 761px) {
   body.panel-open #gestures span { display: none; }
   body.panel-open #gestures button { padding: 9px 11px; font-size: 16px; }
-  #panel { left: max(50%, calc(296px + min(580px, 100vw - 32px) / 2)); }
+  #panel { left: max(50%, calc(340px + min(580px, 100vw - 32px) / 2)); }
+}
+/* 노트북처럼 조금 좁은 화면 — 패널을 오른쪽에 붙이고 폭을 줄여 손짓 버튼과 겹치지 않게 */
+@media (min-width: 761px) and (max-width: 1260px) {
+  #panel { left: auto; right: 16px; width: min(580px, calc(100vw - 372px)); transform: translate(0, 24px); }
+  #panel.show { transform: translate(0, 0); }
 }
 
 /* 앉거나 쪼그려 상호작용하는 동안 — 패널을 얇게 (제목 · 버튼만) */

@@ -4511,7 +4511,15 @@
       }],
       ['💬 이야기 나누기', () => openChat(true)],
       ['🎤 이야기 무대에 서기', () => {
-        const w = p.state.stageLocal.clone().applyMatrix4(p.group.matrixWorld);
+        // 무대 위 세 자리(가운데 · 왼쪽 · 오른쪽) 중 비어 있는 곳 — 두세 명이 서도 겹치지 않게
+        let w = null;
+        for (const dx of [0, -0.9, 0.9]) {                  // 어깨가 닿지 않게 0.9m 간격
+          const c = p.state.stageLocal.clone().add(new THREE.Vector3(dx, 0, -0.2)).applyMatrix4(p.group.matrixWorld);
+          let taken = false;
+          for (const o of others.values()) if (Math.hypot(o.tx - c.x, o.tz - c.z) < 0.6) taken = true;   // 상대가 서 있는(받은) 자리 기준
+          if (!taken) { w = c; break; }
+        }
+        if (!w) { toast('무대가 꽉 찼어요 🙂 자리에서 박수로 응원해요', 2400); return; }
         if (player.userData.pose !== 'stand') setPose('stand');
         player.position.set(w.x, standY(w.x, w.z), w.z);
         moveTarget = null;
@@ -4579,6 +4587,7 @@
         setPose('lie');
         camMode = 'lie';
         camPitch = 0.72;
+        night.skyTurn = 0;              // 누울 때는 북두칠성이 처음 자리에서 시작
         camYaw = 0.78;                  // 북두칠성이 보이는 쪽
         showPanel(p, true);
         toast('드래그해서 밤하늘을 둘러보세요 · 일어나려면 아래 \'일어나기\' 또는 W A S D ✨', 5000);
@@ -4967,6 +4976,7 @@
       }
       if (a.type === 'note' && Number.isInteger(a.key) && a.key >= 0 && a.key < 8) playKey(a.key, true);
       if (a.type === 'cheer' && o) floatEmoji('💛', o.av.position.clone().add(new THREE.Vector3(0, 2.8, 0)));
+      if (a.type === 'emoji' && o && Number.isInteger(a.e) && a.e >= 0 && a.e < EMOJIS.length) floatEmoji(EMOJIS[a.e], o.av.position.clone().add(new THREE.Vector3(0, 2.4, 0)), 0.8, 1.6);
       if (a.type === 'clap' && o) floatEmoji('👏', o.av.position.clone().add(new THREE.Vector3(0, 2.6, 0)), 0.7, 1.2);
       if (a.type === 'windchime') ringChime(false);
       if (a.type === 'water') {
@@ -5139,6 +5149,13 @@
   $('#g-dance').onclick = () => gesture('dance');
   $('#g-stick').onclick = () => gesture('stick');
   $('#g-rps').onclick = () => startRps();
+  // 이모지 보내기 — 고른 이모지가 내 머리 위에 잠깐 떠 있고, 같은 방 사람들에게도 보입니다
+  const EMOJIS = ['😊', '😂', '🥰', '👍', '👏', '🎉', '😮', '😢', '🙏', '❤️', '🌸', '☕'];
+  $('#g-emoji').onclick = () => pickFrom('이모지 보내기', EMOJIS, (i) => {
+    if (!cool('emoji', 800)) return;
+    floatEmoji(EMOJIS[i], player.position.clone().add(new THREE.Vector3(0, 2.4, 0)), 0.8, 1.6);
+    store.send('act', { id: me.id, type: 'emoji', e: i });
+  });
   // 몇 명인지 누르면 — 지금 들어와 있는 사람들의 닉네임
   $('#people').onclick = () => {
     const box = $('#who');
@@ -5671,10 +5688,19 @@
         const stop = pt.state === 'come' || pt.state === 'bring' ? 1.1 : 0.4;
         if (d > stop) {
           mv = true;
+          const bx = o.position.x, bz = o.position.z;
           o.position.x += (dx / d) * speed * dt;
           o.position.z += (dz / d) * speed * dt;
           pushOut(o.position);                         // 동물도 가게 벽 안으로는 들어가지 않습니다
           o.rotation.y = lerp(o.rotation.y, Math.atan2(dx, dz), Math.min(1, dt * 6));
+          // 벽 · 다른 동물에 막혀 제자리걸음이면 1초 뒤 다른 곳으로 (같은 자세로 계속 버티지 않게)
+          const got = Math.hypot(o.position.x - bx, o.position.z - bz);
+          pt.stuck = got < speed * dt * 0.3 ? (pt.stuck || 0) + dt : 0;
+          if (pt.stuck > 1) {
+            pt.stuck = 0;
+            if (pt.state === 'rest') { pt.target = petSpotNear(); pt.t = 2 + Math.random() * 3; }
+            else if (pt.state === 'come') { pt.state = 'rest'; pt.target = petSpotNear(); }
+          }
         } else if (pt.state === 'fetch' && ball) {
           ball.userData.roll = null;
           ball.userData.carriedBy = pt;              // 입에 물고
@@ -5697,6 +5723,17 @@
           if (pt.t <= 0) { pt.t = 3 + Math.random() * 6; pt.target = petSpotNear(); }
         }
         animatePet(o, dt, mv);
+      }
+      // 동물끼리 겹치지 않게 살짝 밀어냅니다 (한 마리가 다른 마리 속에 들어가 있던 문제)
+      const ps = petCafe.state.pets;
+      for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
+        const a = ps[i].obj.position, c = ps[j].obj.position;
+        const ddx = c.x - a.x, ddz = c.z - a.z, dd = Math.hypot(ddx, ddz), MIN = 0.85;
+        if (dd < MIN) {
+          const ux = dd > 1e-3 ? ddx / dd : 1, uz = dd > 1e-3 ? ddz / dd : 0, push = (MIN - dd) * 0.5;
+          a.x -= ux * push; a.z -= uz * push; c.x += ux * push; c.z += uz * push;
+          pushOut(a); pushOut(c);
+        }
       }
     }
 
@@ -5983,6 +6020,12 @@
       camera.lookAt(head.x, head.y - 0.15 - lookDrop, head.z);
     }
     sky.position.set(camera.position.x, 0, camera.position.z);
+    // 밤하늘이 아주 천천히 돕니다 (별 · 별자리가 함께 옆으로 조금씩 흘러감 — 약 17분에 한 바퀴)
+    if (night.mix > 0.05) {
+      night.skyTurn = (night.skyTurn || 0) + dt * 0.006;
+      night.stars.rotation.y = night.skyTurn;
+      night.dipper.rotation.y = night.skyTurn;
+    }
     if (!introOn && introGlow > 0.001) introGlow = lerp(introGlow, 0, Math.min(1, dt * 1.2));
     renderer.toneMappingExposure = 1.0 - night.mix * 0.18 + introGlow;
 
