@@ -1695,7 +1695,7 @@
         for (let q = 0; q <= 400; q++) { const tt = q / 400; if (r * (0.98 - tt * 0.82) <= RR) { ts = tt; break; } }
         const stairAng = Math.atan2(r * (0.98 - ts * 0.82), Math.sin(ts * 3.4) * 1.5);
         const GAP = 0.32;                         // 계단 폭(1.9m)보다 넉넉한 틈
-        const arcs = [[-2.4, stairAng - GAP], [stairAng + GAP, 1.8]].filter(([a0, a1]) => a1 - a0 > 0.05);
+        const arcs = [[-2.4, stairAng - GAP], [stairAng + GAP, 1.8]].filter(([a0, a1]) => a1 - a0 > 0.6);   // 자투리 없이
         const ry2 = mY(RR);
         for (const [a0, a1] of arcs) {
           const n = Math.max(1, Math.round((a1 - a0) / 0.52));
@@ -2676,6 +2676,7 @@
     const k = Math.min(1, dt * 12);
     u.t += dt;
     if (u.playing > 0) u.playing -= dt;
+    if (u.keyHit) { u.keyHit.t += dt; if (u.keyHit.t > 0.6) u.keyHit = null; }
     if (u.watering > 0) u.watering -= dt;
     if (u.drink > 0) {
       u.drink -= dt;
@@ -2749,9 +2750,18 @@
       // 피아노 치는 중 — 두 팔을 번갈아 건반 쪽으로
       if (atKeys) {
         // 두 손을 건반 위에 — 위팔은 앞으로, 팔꿈치는 살짝 굽혀 손끝이 건반에 닿게.
-        // 치는 동안은 손이 번갈아 톡톡 (예전엔 팔이 짧게 들려 건반에 닿지 않았음)
-        const tap = u.playing > 0 ? Math.abs(Math.sin(u.t * 9 + i * 1.7)) * 0.12 : 0;
-        rx = -1.2 + tap; rz = sgn * 0.2; er = -0.45 - tap * 0.5;
+        // 쉬는 동안에도 손이 아주 조금씩 움직이고, 건반을 누르면 그 손이 건반 위로 가서 톡 누릅니다.
+        const shX = sgn * 0.26;
+        let handX = sgn * 0.2;                                      // 쉬는 자리 (몸 앞 조금 벌려)
+        let press = 0;
+        const kh = u.keyHit;
+        if (kh && kh.t < 0.45 && (kh.x >= 0) === (sgn > 0)) {      // 이 손이 칠 건반
+          handX = kh.x;
+          press = kh.t < 0.12 ? smooth(0, 0.08, kh.t) : 1 - smooth(0.12, 0.3, kh.t);
+        }
+        rz = Math.asin(clamp((handX - shX) / 0.52, -0.9, 0.9));   // 손을 좌우로 옮김
+        rx = -1.2 + Math.sin(u.t * 1.6 + i * 2) * 0.03 - press * 0.06;
+        er = -0.45 - press * 0.35 + Math.sin(u.t * 2.1 + i) * 0.03;
       }
       // 물 주는 중 — 오른팔을 앞으로 내밀어 조리개를 기울입니다
       if (u.watering > 0 && i === 1) {
@@ -2761,11 +2771,12 @@
       }
       // 음료 마시는 중 — 오른팔이 입으로 올라갔다 내려옵니다
       if (u.drink > 0 && i === 1) {
-        const cyc = u.drink % 2.6;
-        const sip = cyc > 1.5 ? smooth(1.5, 1.9, cyc) * (1 - smooth(2.3, 2.6, cyc)) : 0;
-        rx = -0.55 - sip * 0.45;
-        rz = sgn * (0.26 - sip * 0.12);
-        er = -0.75 - sip * 1.35;
+        const cyc = u.drink % 4;
+        const sip = smooth(2.0, 2.7, cyc) * (1 - smooth(3.4, 4.0, cyc));   // 들고 있다가 → 입으로 → 내려놓기
+        u.sip = sip;
+        rx = -0.5 - sip * 0.32;                   // 위팔은 조금만 앞으로
+        rz = sgn * (0.12 - sip * 0.42);           // 마실 땐 손이 몸 안쪽(입)으로
+        er = -1.15 - sip * 0.95;                  // 팔꿈치를 굽혀 컵을 입 높이로
       }
       let ez = 0;
       if (i === 1 && waveAmt > 0.02) {
@@ -2825,6 +2836,7 @@
       u.arms[i].sh.rotation.z = lerp(u.arms[i].sh.rotation.z, rz, k);
       u.arms[i].elbow.rotation.x = lerp(u.arms[i].elbow.rotation.x, er, k);
       u.arms[i].elbow.rotation.z = lerp(u.arms[i].elbow.rotation.z, ez, Math.min(1, dt * 18));
+      if (i === 1 && u.cup) u.cup.rotation.x = -(u.arms[1].sh.rotation.x + u.arms[1].elbow.rotation.x) - (u.sip || 0) * 0.9;
     }
     // 몸 전체 — 걸을 때 위아래로 통통, 서 있을 땐 숨 쉬듯
     const bob = w * Math.abs(Math.sin(u.gait)) * 0.055 + (1 - w) * Math.sin(u.t * 1.5) * 0.012;
@@ -4065,7 +4077,7 @@
         moveTarget = null;
         player.rotation.y = Math.atan2(d.x, d.z);
         // 카메라는 동물 쪽(앞)에서 비스듬히 — 내 얼굴과 동물이 함께 보이게
-        frontView(Math.atan2(d.x, d.z), { dist: 4.2, pitch: 0.26, offs: [0.7, -0.7, 1.15, -1.15, 1.6, -1.6, 2.1, -2.1] });
+        frontView(Math.atan2(d.x, d.z), { dist: 4.6, pitch: 0.3, offs: [1.3, -1.3, 1.0, -1.0, 1.65, -1.65, 2.1, -2.1] });
 
         return d;
       };
@@ -4172,6 +4184,8 @@
     showPanel(currentPlace, true);
   }
   function playKey(i, remote = false) {
+    // 내 몸 기준 건반 위치 — 피아노를 마주 보고 앉으므로 좌우가 뒤집힙니다 (흰 건반 폭 0.36 × 크기 0.45)
+    if (!remote) player.userData.keyHit = { x: -(i - 3.5) * 0.162, t: 0 };
     tone(SCALE[i], remote ? 0.12 : 0.25);
     flashKey(i);
     if (!remote) store.send('act', { id: me.id, type: 'note', key: i });
@@ -5437,6 +5451,7 @@
       camera.position.lerp(want, Math.min(1, dt * 5));
       // 아래 패널(장소 · 건반)이 화면을 가리는 만큼 시선을 내려, 캐릭터가 패널 위로 보이게 합니다
       const pnl = document.getElementById('panel');
+      pnl.classList.toggle('compact', player.userData.pose !== 'stand');
       const cover = pnl.classList.contains('show') ? Math.min(0.6, pnl.offsetHeight / window.innerHeight) : 0;
       const viewH = 2 * camDistNow * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
       lookDrop = lerp(lookDrop, cover * viewH * 0.5, Math.min(1, dt * 3));

@@ -339,3 +339,7 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
   body.panel-open #gestures button { padding: 9px 11px; font-size: 16px; }
   #panel { left: max(50%, calc(296px + min(580px, 100vw - 32px) / 2)); }
 }
+
+/* 앉거나 쪼그려 상호작용하는 동안 — 패널을 얇게 (제목 · 버튼만) */
+#panel.compact p, #panel.compact .info { display: none; }
+#panel.compact .actions { margin-top: 8px; }
