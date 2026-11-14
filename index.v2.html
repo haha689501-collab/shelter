@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>쉼터</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌲</text></svg>">
+<meta name="description" content="잠깐 걸으며 쉬어 가는 3D 쉼터. 연못과 소나무 언덕, 창가 카페와 별빛 운동장을 함께 걸어 보세요.">
+<meta name="theme-color" content="#e8bd9b">
+<!-- 링크를 공유했을 때 보이는 미리보기 -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="쉼터 — 잠깐 걸으며 쉬어 가는 곳">
+<meta property="og:description" content="연못가에 앉고, 별을 보고, 강아지와 놀 수 있는 3D 쉼터. 방 코드만 있으면 함께 들어옵니다.">
+<meta property="og:url" content="https://shelter-gamma.vercel.app/">
+<meta property="og:site_name" content="쉼터">
+<meta property="og:image" content="https://shelter-gamma.vercel.app/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="쉼터 — 잠깐 걸으며 쉬어 가는 곳">
+<meta name="twitter:description" content="연못가에 앉고, 별을 보고, 강아지와 놀 수 있는 3D 쉼터.">
+<meta name="twitter:image" content="https://shelter-gamma.vercel.app/og.png">
+<link rel="stylesheet" href="style.v2.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div id="app"></div>
+<div id="vignette"></div>
+
+<div id="hud" class="glass">
+  <span class="title" id="hud-title">쉼터</span>
+  <span class="meta" id="people">혼자 쉬는 중</span>
+  <span class="me">나: <b id="myname"></b><button id="rename" type="button">이름 바꾸기</button><button id="look-open2" type="button">모습 바꾸기</button></span>
+  <span class="me">방 코드: <b id="room-code">MAIN</b><button id="room-copy" type="button">초대 주소 복사</button></span>
+</div>
+
+<div id="topright">
+  <button class="glass iconbtn" id="btn-places" type="button">📍 길</button>
+  <button class="glass iconbtn" id="btn-chat" type="button">💬 대화</button>
+  <button class="glass iconbtn" id="btn-sound" type="button">🔊 소리 켜짐</button>
+  <button class="glass iconbtn" id="btn-help" type="button">❔ 도움말</button>
+</div>
+
+<div id="places" class="glass"><span class="label">길 찾기</span></div>
+
+<div id="gestures" class="glass">
+  <button type="button" id="g-wave">👋 손 흔들기</button>
+  <button type="button" id="g-bow">🙇 인사하기</button>
+</div>
+
+<div id="chat" class="glass">
+  <div id="chat-head"><span>💬 대화</span><button id="chat-close" type="button" aria-label="닫기">✕</button></div>
+  <div id="chat-list"></div>
+  <div id="chat-quick">
+    <button type="button">안녕하세요!</button>
+    <button type="button">반가워요 🙂</button>
+    <button type="button">오늘도 수고했어요</button>
+  </div>
+  <div id="chat-row">
+    <input id="chat-input" type="text" maxlength="40" placeholder="인사를 남겨 보세요 (Enter)" autocomplete="off">
+    <button id="chat-send" type="button">보내기</button>
+  </div>
+</div>
+
+<div id="panel" class="glass"></div>
+<div id="toast" class="glass"></div>
+<div id="roomfull" class="glass"></div>
+
+<div id="modal" class="overlay">
+  <div class="box glass">
+    <h4 id="modal-title"></h4>
+    <input id="modal-input" type="text" autocomplete="off">
+    <div class="row">
+      <span class="count" id="modal-count"></span>
+      <div class="btns">
+        <button class="cancel" id="modal-cancel" type="button">취소</button>
+        <button class="ok" id="modal-ok" type="button">남기기</button>
+      </div>
+    </div>
+    <p class="notice" id="modal-notice">이름 · 연락처 같은 개인정보는 적지 말아 주세요. 남긴 글은 다른 사람도 볼 수 있어요.</p>
+  </div>
+</div>
+
+<div id="look" class="overlay">
+  <div class="box glass">
+    <h4>내 모습 고르기</h4>
+    <div id="look-main">
+      <canvas id="look-preview" width="300" height="420"></canvas>
+      <div id="look-side">
+        <div id="look-presets"></div>
+        <div id="look-body"></div>
+      </div>
+    </div>
+    <button class="ok" id="look-done" type="button">완료</button>
+  </div>
+</div>
+
+<div id="breath" class="overlay">
+  <div class="circle" id="breath-circle"></div>
+  <div class="text" id="breath-text">편하게 앉아요</div>
+  <button type="button" id="breath-close">그만하기</button>
+</div>
+
+<div id="help" class="overlay">
+  <div class="box glass">
+    <h2 style="margin-bottom:14px">이렇게 둘러보세요</h2>
+    <ul>
+      <li>🖱 <b>땅을 클릭(탭)</b>하면 그곳으로 걸어가요</li>
+      <li>⌨ <b>W A S D / 방향키</b>로도 움직일 수 있어요</li>
+      <li>🔄 <b>드래그</b>로 시점 회전, <b>휠</b>로 확대·축소</li>
+      <li>📍 장소에 가까이 가면 아래에 할 수 있는 일이 나와요</li>
+      <li>📝 나무의 쪽지와 하늘의 별을 클릭하면 글을 읽을 수 있어요</li>
+      <li>🎹 음악실에서는 숫자키 1~8로 건반을 칠 수 있어요</li>
+    </ul>
+    <button class="close" id="help-close" type="button">닫기</button>
+  </div>
+</div>
+
+<div id="intro" class="overlay show">
+  <div class="box glass">
+    <h1 id="intro-title">쉼터</h1>
+    <p class="sub" id="intro-sub"></p>
+    <ul>
+      <li>🌲 소나무 아래에서 숨 고르기</li>
+      <li>🌱 함께 물 주며 화분 키우기</li>
+      <li>☕ 창가에서 빗소리 듣기</li>
+      <li>🎹 건반 하나씩 눌러 보기</li>
+      <li>🌌 누워서 별 보고 소원 띄우기</li>
+    </ul>
+    <div class="code">
+      <label for="intro-name">닉네임</label>
+      <input id="intro-name" type="text" maxlength="12" placeholder="보일 이름" autocomplete="off">
+    </div>
+    <button class="look-btn" id="look-open" type="button">🎨 내 모습 고르기</button>
+    <div class="code">
+      <label for="intro-code">방 코드</label>
+      <input id="intro-code" type="text" maxlength="12" placeholder="비워 두면 공개 방" autocomplete="off">
+    </div>
+    <button class="enter" id="enter" type="button" disabled>불러오는 중…</button>
+    <p class="mode" id="intro-mode"></p>
+  </div>
+</div>
+
+<script src="app.v2.js"></script>
+</body>
+</html>

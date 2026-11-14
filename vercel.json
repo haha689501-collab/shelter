@@ -1,0 +1,7 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/", "destination": "/index.v2.html" },
+    { "source": "/room/:code", "destination": "/index.v2.html" }
+  ]
+}

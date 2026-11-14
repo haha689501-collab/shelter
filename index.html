@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>쉼터</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌲</text></svg>">
+<link rel="stylesheet" href="style.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud" class="glass">
+  <span class="title" id="hud-title">쉼터</span>
+  <span class="meta" id="people">혼자 쉬는 중</span>
+  <span class="me">나: <b id="myname"></b><button id="rename" type="button">이름 바꾸기</button></span>
+</div>
+
+<div id="topright">
+  <button class="glass iconbtn" id="btn-sound" type="button">🔊 소리 켜짐</button>
+  <button class="glass iconbtn" id="btn-help" type="button">❔ 도움말</button>
+</div>
+
+<div id="places" class="glass"><span class="label">길 찾기</span></div>
+
+<div id="gestures" class="glass">
+  <button type="button" id="g-wave">👋 손 흔들기</button>
+  <button type="button" id="g-bow">🙇 인사하기</button>
+</div>
+
+<div id="panel" class="glass"></div>
+<div id="toast" class="glass"></div>
+<div id="roomfull" class="glass"></div>
+
+<div id="modal" class="overlay">
+  <div class="box glass">
+    <h4 id="modal-title"></h4>
+    <input id="modal-input" type="text" autocomplete="off">
+    <div class="row">
+      <span class="count" id="modal-count"></span>
+      <div class="btns">
+        <button class="cancel" id="modal-cancel" type="button">취소</button>
+        <button class="ok" id="modal-ok" type="button">남기기</button>
+      </div>
+    </div>
+    <p class="notice" id="modal-notice">이름 · 연락처 같은 개인정보는 적지 말아 주세요. 남긴 글은 다른 사람도 볼 수 있어요.</p>
+  </div>
+</div>
+
+<div id="breath" class="overlay">
+  <div class="circle" id="breath-circle"></div>
+  <div class="text" id="breath-text">편하게 앉아요</div>
+  <button type="button" id="breath-close">그만하기</button>
+</div>
+
+<div id="help" class="overlay">
+  <div class="box glass">
+    <h2 style="margin-bottom:14px">이렇게 둘러보세요</h2>
+    <ul>
+      <li>🖱 <b>땅을 클릭(탭)</b>하면 그곳으로 걸어가요</li>
+      <li>⌨ <b>W A S D / 방향키</b>로도 움직일 수 있어요</li>
+      <li>🔄 <b>드래그</b>로 시점 회전, <b>휠</b>로 확대·축소</li>
+      <li>📍 장소에 가까이 가면 아래에 할 수 있는 일이 나와요</li>
+      <li>📝 나무의 쪽지와 하늘의 별을 클릭하면 글을 읽을 수 있어요</li>
+      <li>🎹 음악실에서는 숫자키 1~8로 건반을 칠 수 있어요</li>
+    </ul>
+    <button class="close" id="help-close" type="button">닫기</button>
+  </div>
+</div>
+
+<div id="intro" class="overlay show">
+  <div class="box glass">
+    <h1 id="intro-title">쉼터</h1>
+    <p class="sub" id="intro-sub"></p>
+    <ul>
+      <li>🌲 소나무 아래에서 숨 고르기</li>
+      <li>🌱 함께 물 주며 화분 키우기</li>
+      <li>☕ 창가에서 빗소리 듣기</li>
+      <li>🎹 건반 하나씩 눌러 보기</li>
+      <li>🌌 누워서 별 보고 소원 띄우기</li>
+    </ul>
+    <button class="enter" id="enter" type="button" disabled>불러오는 중…</button>
+    <p class="mode" id="intro-mode"></p>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
