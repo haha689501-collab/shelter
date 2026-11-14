@@ -264,7 +264,11 @@
 
   // 화면 효과 — 빛 번짐(블룸). 지는 해와 등불이 공기 중에 번져 사진처럼 보입니다.
   let composer = null;
+  // 휴대폰(아이폰 · 아이패드 · 안드로이드)은 빛 번짐을 끕니다 — 휴대폰 그래픽에서
+  // 하늘 · 등불 주변에 색 점(잔상)이 생기고, 발열 · 배터리 소모도 큽니다.
+  const PHONE = /Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
   async function setupComposer() {
+    if (PHONE) return;
     try {
       const base = 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/';
       const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
@@ -548,18 +552,19 @@
   })();
 
   function emojiSprite(emoji, size = 1) {
+    // 아이폰 이모지는 글꼴보다 크게 그려져 작은 캔버스에선 가장자리가 잘립니다 → 넉넉한 여백
     const c = document.createElement('canvas');
-    c.width = c.height = 96;
+    c.width = c.height = 160;
     const g = c.getContext('2d');
-    g.font = '72px "Segoe UI Emoji","Apple Color Emoji",sans-serif';
+    g.font = '96px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText(emoji, 48, 54);
+    g.fillText(emoji, 80, 86);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false, fog: false }));
     sp.renderOrder = 11;
-    sp.scale.set(size, size, 1);
+    sp.scale.set(size * 1.25, size * 1.25, 1);   // 여백만큼 키워 보이는 크기는 예전과 같게
     return sp;
   }
 
@@ -4724,6 +4729,14 @@
     $('#intro').classList.remove('show');
     document.body.classList.remove('intro');
     introOn = false;
+    // 처음 한 번만 — 시점 돌리는 방법 안내 (다시 보려면 ❔ 도움말)
+    if (!localStorage.getItem('shelter:viewHint')) {
+      localStorage.setItem('shelter:viewHint', '1');
+      const touch = window.matchMedia('(pointer: coarse)').matches;
+      setTimeout(() => toast(touch
+        ? '👆 화면을 손가락으로 끌면 둘러볼 수 있어요'
+        : '🖱 화면을 끌거나 Q · E 키로 둘러봐요 · R · F 위아래 · C 내 뒤로', 5200), 1200);
+    }
     store.connect(handlers);
     netDirty = true;
   };
