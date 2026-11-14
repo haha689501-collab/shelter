@@ -251,6 +251,8 @@
   // 렌더러 · 장면
   // ------------------------------------------------------------------
   const LOW = (navigator.hardwareConcurrency || 8) <= 4 || /Android|iPhone|iPad/i.test(navigator.userAgent);
+  // 휴대폰 (아이폰 · 아이패드 · 안드로이드) — 화면 효과 몇 가지를 끕니다 (아래 설명)
+  const PHONE = /Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, LOW ? 1.3 : 1.8));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -258,7 +260,8 @@
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // 휴대폰 그래픽에서는 부드러운 그림자가 바닥 · 하늘에 색 점(잔상)을 만들어 기본 그림자로
+  renderer.shadowMap.type = PHONE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   $('#app').appendChild(renderer.domElement);
   const ANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 
@@ -266,7 +269,6 @@
   let composer = null;
   // 휴대폰(아이폰 · 아이패드 · 안드로이드)은 빛 번짐을 끕니다 — 휴대폰 그래픽에서
   // 하늘 · 등불 주변에 색 점(잔상)이 생기고, 발열 · 배터리 소모도 큽니다.
-  const PHONE = /Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
   async function setupComposer() {
     if (PHONE) return;
     try {
@@ -597,7 +599,7 @@
   scene.add(sky);
 
   // 하늘을 환경광으로 구워 두면 모든 재질의 반사가 자연스러워집니다.
-  try {
+  if (!PHONE) try {   // 휴대폰은 생략 — 일부 휴대폰에서 이 텍스처가 깨져 온 화면에 색 점(잔상)이 생겼습니다
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envScene = new THREE.Scene();
     envScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 24, 14), skyMat.clone()));
@@ -724,8 +726,8 @@
   moonLight.shadow.camera.right = 30;
   moonLight.shadow.camera.top = 30;
   moonLight.shadow.camera.bottom = -30;
-  moonLight.shadow.bias = -0.0006;
-  moonLight.shadow.normalBias = 0.035;
+  moonLight.shadow.bias = PHONE ? -0.0015 : -0.0006;
+  moonLight.shadow.normalBias = PHONE ? 0.08 : 0.035;
   moonLight.shadow.radius = 2.5;
   scene.add(moonLight);
   scene.add(moonLight.target);
@@ -741,7 +743,8 @@
     skyMat.uniforms.mid.value.copy(DAY.mid).lerp(NGT.mid, m);
     skyMat.uniforms.bottom.value.copy(DAY.bot).lerp(NGT.bot, m);
     scene.fog.color.copy(DAY.fog).lerp(NGT.fog, m);
-    night.stars.material.opacity = 0.25 + m * 0.75;
+    night.stars.material.opacity = m < 0.05 ? 0 : 0.25 + m * 0.75;   // 낮(노을)에는 별을 숨깁니다 — 하늘에 점처럼 보였음
+    night.stars.visible = m >= 0.05;
     night.stars.material.size = 2 + m * 0.8;
     night.sun.material.opacity = 1 - m;
     night.halo.material.opacity = 0.9 * (1 - m);
@@ -749,7 +752,7 @@
     night.dipper.visible = m > 0.25;
     moonLight.intensity = 2.1 * (1 - m) + 0.5 * m;
     moonLight.color.setHex(0xffd4a0).lerp(new THREE.Color(0xbcd0ff), m);
-    if (hemi) hemi.intensity = 1.15 * (1 - m) + 0.35 * m;
+    if (hemi) hemi.intensity = (1.15 * (1 - m) + 0.35 * m) * (PHONE ? 1.35 : 1);   // 휴대폰은 환경광이 없어 조금 더 밝게
     if (amb) amb.intensity = 0.55 * (1 - m) + 0.25 * m;
     renderer.toneMappingExposure = 1.0 - m * 0.18;
   }
@@ -3107,6 +3110,8 @@
     // 몸 전체 — 걸을 때 위아래로 통통, 서 있을 땐 숨 쉬듯
     const bob = w * Math.abs(Math.sin(u.gait)) * 0.055 + (1 - w) * Math.sin(u.t * 1.5) * 0.012;
     u.inner.position.y = lerp(u.inner.position.y, rootY + bob, k);
+    if (u.prevPose === 'lie' && u.pose !== 'lie') { u.inner.rotation.x = rootRx; u.inner.position.y = rootY; }
+    u.prevPose = u.pose;
     u.inner.rotation.x = lerp(u.inner.rotation.x, rootRx, Math.min(1, dt * 8));
     u.upper.rotation.x = lerp(u.upper.rotation.x, upperRx + w * 0.08, k);
     u.body.rotation.z = lerp(u.body.rotation.z, Math.sin(u.gait) * 0.03 * w + Math.sin(beat * 0.5) * 0.11 * danceAmt + Math.sin(u.t * 5.2) * 0.04 * stickAmt, k);
@@ -4089,8 +4094,9 @@
     crouchT = sec;
   }
   function setPose(pose) {
-    if (pose === 'stand') { sitLift = 0; crouchT = 0; takeCup(player); player.userData.atPiano = false; if (player.userData.meditate) stopBreath(); if (currentPlace) showPanel(currentPlace, true); }
+    if (pose === 'stand') { sitLift = 0; crouchT = 0; takeCup(player); player.userData.atPiano = false; if (player.userData.meditate) stopBreath(); }
     player.userData.pose = pose;
+    if (pose === 'stand' && currentPlace) showPanel(currentPlace, true);
     if (pose !== 'lie') camMode = 'follow';
     netDirty = true;
   }
