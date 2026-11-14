@@ -5114,6 +5114,14 @@
   });
   // 방 코드 표시와 복사
   $('#room-code').textContent = room;
+  // 들어온 뒤에도 방을 바꿀 수 있게
+  $('#room-change').onclick = async () => {
+    const raw = await askText('들어갈 방 코드 (비우면 공개 방)', '예) FAMILY');
+    if (raw === null) return;
+    const want = String(raw).replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 12) || 'MAIN';
+    localStorage.setItem('shelter:lastRoom', want);
+    if (want !== room) location.href = location.pathname.replace(/\/room\/.*/, '') + '?room=' + want;
+  };
   $('#room-copy').onclick = async () => {
     const url = location.origin + location.pathname.replace(/\/room\/.*/, '') + '?room=' + room;
     try { await navigator.clipboard.writeText(url); toast('초대 주소를 복사했어요 — 친구에게 붙여넣기 하세요', 3000); }
@@ -5253,6 +5261,7 @@
         : '🖱 화면을 끌거나 Q · E 키로 둘러봐요 · R · F 위아래 · C 내 뒤로', 5200), 1200);
     }
     joinQuietUntil = performance.now() + 4000;
+    if (room !== 'MAIN') localStorage.setItem('shelter:lastRoom', room);   // 실제로 들어간 방을 기억
     store.connect(handlers);
     netDirty = true;
   };
