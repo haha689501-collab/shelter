@@ -343,3 +343,6 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
 /* 앉거나 쪼그려 상호작용하는 동안 — 패널을 얇게 (제목 · 버튼만) */
 #panel.compact p, #panel.compact .info { display: none; }
 #panel.compact .actions { margin-top: 8px; }
+
+/* 입장 · 퇴장 알림 줄 */
+#chat-list .line.sys { opacity: .65; font-size: 12px; text-align: center; padding: 2px 0; }

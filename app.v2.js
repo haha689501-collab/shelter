@@ -4775,6 +4775,14 @@
     u.bubble = lb;
     bubbles.push({ av, lb, t: 0 });
   }
+  // 입장 · 퇴장 알림 — 위쪽 알림 + 대화창에 한 줄 (입장은 작은 딩동 소리)
+  let joinQuietUntil = Infinity;
+  function announce(text, ding) {
+    toast(text, 2600);
+    const list = $('#chat-list');
+    if (list) { list.append(el('div', { className: 'line sys', textContent: text })); list.scrollTop = list.scrollHeight; }
+    if (ding && actx && !muted) { tone(988, 0.05, 0.25); setTimeout(() => tone(1319, 0.05, 0.35), 130); }
+  }
   function chatLog(name, text, mine) {
     const list = $('#chat-list');
     if (!list) return;
@@ -4879,7 +4887,10 @@
       presentIds = ids.slice();
       $('#people').textContent = n <= 1 ? '👥 지금은 나 혼자 쉬는 중' : `👥 지금 ${n}명이 함께 쉬고 있어요 ▾`;
       if ($('#who').classList.contains('open')) renderWho();
-      for (const [id, o] of others) if (!ids.includes(id)) { scene.remove(o.av); others.delete(id); }
+      for (const [id, o] of others) if (!ids.includes(id)) {
+        if (o.name && performance.now() > joinQuietUntil) announce(`🚶 ${o.name}님이 나갔어요`, false);
+        scene.remove(o.av); others.delete(id);
+      }
       if (!roomChecked && n > 0) {
         roomChecked = true;
         if (n > C.roomCapacity) {
@@ -4909,6 +4920,8 @@
         o.av.position.set(m.x, standY(m.x, m.z), m.z);
         scene.add(o.av);
         others.set(m.id, o);
+        // 입장 알림 — 내가 막 들어왔을 때 이미 있던 사람들은 알리지 않습니다 (한꺼번에 뜨지 않게)
+        if (performance.now() > joinQuietUntil) announce(`👋 ${String(m.name || '손님').slice(0, 20)}님이 들어왔어요`, true);
       }
       o.name = String(m.name || '손님').slice(0, 20);
       o.tx = Number(m.x) || 0;
@@ -5197,6 +5210,13 @@
   const codeInput = $('#intro-code');
   if (codeInput) {
     codeInput.value = room === 'MAIN' ? '' : room;
+    // 주소에 방 코드가 없으면(카톡 · 즐겨찾기로 그냥 열면) 지난번에 들어갔던 방 코드를 미리 채워 둡니다
+    const urlHasRoom = params.get('room') || pathCode;
+    const last = localStorage.getItem('shelter:lastRoom');
+    if (!urlHasRoom && last && last !== 'MAIN') {
+      codeInput.value = last;
+      $('#intro-mode').textContent = `지난번 방 "${last}" 으로 들어가요 · 공개 방은 코드를 지우세요`;
+    }
     codeInput.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) enterBtn.click(); };
   }
   enterBtn.onclick = () => {
@@ -5204,6 +5224,7 @@
     if (codeInput) {
       const code = codeInput.value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase().slice(0, 12);
       const want = code || 'MAIN';
+      localStorage.setItem('shelter:lastRoom', want);
       if (want !== room) { location.href = location.pathname.replace(/\/room\/.*/, '') + '?room=' + want; return; }
     }
     // 적어 둔 닉네임을 내 이름으로 (비워 두면 처음 받은 별명 그대로)
@@ -5231,6 +5252,7 @@
         ? '👆 화면을 손가락으로 끌면 둘러볼 수 있어요'
         : '🖱 화면을 끌거나 Q · E 키로 둘러봐요 · R · F 위아래 · C 내 뒤로', 5200), 1200);
     }
+    joinQuietUntil = performance.now() + 4000;
     store.connect(handlers);
     netDirty = true;
   };
