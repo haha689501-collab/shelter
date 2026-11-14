@@ -1686,19 +1686,31 @@
           g.add(capl);
         }
       }
-      // 꼭대기 난간
+      // 꼭대기 난간 — 돌계단이 올라오는 자리는 비워 둡니다 (예전엔 계단 끝을 난간이 막았음)
       const railM = matT('wood', { repeat: 1.2, color: '#9d7a55' });
-      for (let k = 0; k < 9; k++) {
-        const a3 = -2.4 + (k / 8) * 4.2;
-        const rx2 = Math.cos(a3) * 5.4, rz2 = Math.sin(a3) * 5.4;
-        const ry2 = mY(5.4);
-        g.add(mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.95, 7), railM, rx2, ry2 + 0.45, rz2));
-        if (k < 8) {
-          const a4 = -2.4 + ((k + 1) / 8) * 4.2;
-          const nx2 = Math.cos(a4) * 5.4, nz2 = Math.sin(a4) * 5.4;
-          const bar = mesh(new THREE.BoxGeometry(Math.hypot(nx2 - rx2, nz2 - rz2), 0.08, 0.08), railM, (rx2 + nx2) / 2, ry2 + 0.82, (rz2 + nz2) / 2);
-          bar.rotation.y = -Math.atan2(nz2 - rz2, nx2 - rx2);
-          g.add(bar);
+      {
+        const RR = 5.4;
+        // 계단이 반지름 RR 을 지나는 곳의 각도 (계단 식과 같은 식으로 계산)
+        let ts = 0;
+        for (let q = 0; q <= 400; q++) { const tt = q / 400; if (r * (0.98 - tt * 0.82) <= RR) { ts = tt; break; } }
+        const stairAng = Math.atan2(r * (0.98 - ts * 0.82), Math.sin(ts * 3.4) * 1.5);
+        const GAP = 0.32;                         // 계단 폭(1.9m)보다 넉넉한 틈
+        const arcs = [[-2.4, stairAng - GAP], [stairAng + GAP, 1.8]].filter(([a0, a1]) => a1 - a0 > 0.05);
+        const ry2 = mY(RR);
+        for (const [a0, a1] of arcs) {
+          const n = Math.max(1, Math.round((a1 - a0) / 0.52));
+          for (let k = 0; k <= n; k++) {
+            const a3 = a0 + (k / n) * (a1 - a0);
+            const rx2 = Math.cos(a3) * RR, rz2 = Math.sin(a3) * RR;
+            g.add(mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.95, 7), railM, rx2, ry2 + 0.45, rz2));
+            if (k < n) {
+              const a4 = a0 + ((k + 1) / n) * (a1 - a0);
+              const nx2 = Math.cos(a4) * RR, nz2 = Math.sin(a4) * RR;
+              const bar = mesh(new THREE.BoxGeometry(Math.hypot(nx2 - rx2, nz2 - rz2), 0.08, 0.08), railM, (rx2 + nx2) / 2, ry2 + 0.82, (rz2 + nz2) / 2);
+              bar.rotation.y = -Math.atan2(nz2 - rz2, nx2 - rx2);
+              g.add(bar);
+            }
+          }
         }
       }
       // 비탈의 들꽃
@@ -2016,7 +2028,7 @@
       g.add(piano);
       const b = bench();
       b.scale.set(0.6, 0.85, 0.8);
-      b.position.set(0, 0.45, 0.2);
+      b.position.set(0, 0.45, -0.08);    // 건반에 손이 닿도록 피아노 쪽으로
       b.rotation.y = Math.PI;
       g.add(b);
       // 처마에 매단 등 — 사람이 들어오면 밝아집니다
@@ -2032,7 +2044,7 @@
       p.state.lanternMat = lanternMat;
       p.state.blocks = [[-4.2, -4.2, 0.42], [4.2, -4.2, 0.42], [-4.2, 4.2, 0.42], [4.2, 4.2, 0.42]];
       p.state.boxes = [[0, -1.25, 1.3, 0.75]];                     // 피아노
-      p.state.seatLocal = new THREE.Vector3(0, 0, 0.2);
+      p.state.seatLocal = new THREE.Vector3(0, 0, -0.08);
       p.state.pianoLocal = new THREE.Vector3(0, 1.2, -0.95);
       p.state.keys = keys;
       p.labelY = 9.4;
@@ -2685,6 +2697,8 @@
     let rootY = 0, rootRx = 0, upperRx = 0, hipA = s * 0.62 * w, kneeA = Math.max(0, -s) * 0.5 * w;
     if (u.pose === 'sit') { rootY = -0.3; }
     if (u.pose === 'crouch') { rootY = -0.52; upperRx += 0.18; }
+    const atKeys = u.pose === 'sit' && (u.atPiano || u.playing > 0);
+    if (atKeys) upperRx += 0.14;                 // 피아노 앞 — 상체를 살짝 숙여 건반 쪽으로
     if (u.pose === 'lie') { rootY = 0.34; rootRx = -Math.PI / 2; }
 
     // 제스처
@@ -2733,7 +2747,12 @@
       if (u.pose === 'sit') { rx = -0.35; rz = sgn * 0.2; er = -0.5; }
       if (u.pose === 'crouch') { rx = -0.62; rz = sgn * 0.26; er = -0.72; }
       // 피아노 치는 중 — 두 팔을 번갈아 건반 쪽으로
-      if (u.playing > 0) { rx = -1.0 + Math.sin(u.t * 9 + i * 1.7) * 0.14; rz = sgn * 0.24; er = -0.5; }
+      if (atKeys) {
+        // 두 손을 건반 위에 — 위팔은 앞으로, 팔꿈치는 살짝 굽혀 손끝이 건반에 닿게.
+        // 치는 동안은 손이 번갈아 톡톡 (예전엔 팔이 짧게 들려 건반에 닿지 않았음)
+        const tap = u.playing > 0 ? Math.abs(Math.sin(u.t * 9 + i * 1.7)) * 0.12 : 0;
+        rx = -1.2 + tap; rz = sgn * 0.2; er = -0.45 - tap * 0.5;
+      }
       // 물 주는 중 — 오른팔을 앞으로 내밀어 조리개를 기울입니다
       if (u.watering > 0 && i === 1) {
         rx = -1.15;
@@ -3744,7 +3763,7 @@
     crouchT = sec;
   }
   function setPose(pose) {
-    if (pose === 'stand') { sitLift = 0; crouchT = 0; takeCup(player); if (currentPlace) showPanel(currentPlace, true); }
+    if (pose === 'stand') { sitLift = 0; crouchT = 0; takeCup(player); player.userData.atPiano = false; if (currentPlace) showPanel(currentPlace, true); }
     player.userData.pose = pose;
     if (pose !== 'lie') camMode = 'follow';
     netDirty = true;
@@ -3914,6 +3933,21 @@
     } catch (e) { console.warn(e); toast('저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
   }
 
+  // 상호작용할 때 '앞모습'이 보이는 시점 — faceYaw(캐릭터가 바라보는 방향) 앞쪽 여러 각도를
+  // 실제로 비춰 보고, 벽 · 기둥에 막히지 않는 것 중 정면에 가장 가까운 각도를 고릅니다.
+  function frontView(faceYaw, { dist = 5, pitch = 0.24, offs = [0.5, -0.5, 0.9, -0.9, 1.3, -1.3, 1.7, -1.7] } = {}) {
+    const eye = new THREE.Vector3(player.position.x, player.position.y + 1.1, player.position.z);
+    let pick = offs[0];
+    for (const off of offs) {
+      const a = faceYaw + off;
+      camRay.set(eye, new THREE.Vector3(Math.sin(a) * Math.cos(pitch), Math.sin(pitch), Math.cos(a) * Math.cos(pitch)));
+      camRay.far = dist + 0.3;
+      if (!camRay.intersectObjects(occluders, false).length) { pick = off; break; }
+    }
+    camYaw = faceYaw + pick;
+    camPitch = pitch;
+    camDist = dist;
+  }
   function goTo(local, place) {
     const w = local.clone().applyMatrix4(place.group.matrixWorld);
     player.position.set(w.x, standY(w.x, w.z), w.z);
@@ -3992,9 +4026,8 @@
         const vp2 = p.state.viewLocal.clone().applyMatrix4(p.group.matrixWorld);
         const dx = vp2.x - player.position.x, dz = vp2.z - player.position.z;
         player.rotation.y = Math.atan2(dx, dz);
-        camYaw = Math.atan2(-dx, -dz) + 0.85;
-        camPitch = 0.2;
-        camDist = 7.4;
+        // 카메라는 앞(공원 쪽)에서 비스듬히 — 뒷모습이 아니라 얼굴과 창가가 함께 보이게
+        frontView(player.rotation.y, { dist: 5.6, pitch: 0.18, offs: [0.45, -0.45, 0.9, -0.9, 1.3, -1.3] });
         if (!rainOn) toggleRain(p);
       }],
       ['☕ 음료 마시기', () => {
@@ -4005,9 +4038,7 @@
         setPose('sit');
         const vp = p.state.viewLocal.clone().applyMatrix4(p.group.matrixWorld);
         player.rotation.y = Math.atan2(vp.x - player.position.x, vp.z - player.position.z);
-        camYaw = Math.atan2(-(vp.x - player.position.x), -(vp.z - player.position.z));
-        camPitch = 0.26;
-        camDist = 7.6;
+        frontView(player.rotation.y, { dist: 5.2, pitch: 0.22 });   // 앞에서 — 마시는 얼굴이 보이게
         giveCup(player);
         toast('노을을 보며 한 잔 ☕', 2600);
       }],
@@ -4033,9 +4064,9 @@
         pushOut(player.position);
         moveTarget = null;
         player.rotation.y = Math.atan2(d.x, d.z);
-        camYaw = Math.atan2(-d.x, -d.z);
-        camPitch = 0.3;
-        camDist = 4.6;
+        // 카메라는 동물 쪽(앞)에서 비스듬히 — 내 얼굴과 동물이 함께 보이게
+        frontView(Math.atan2(d.x, d.z), { dist: 4.2, pitch: 0.26, offs: [0.7, -0.7, 1.15, -1.15, 1.6, -1.6, 2.1, -2.1] });
+
         return d;
       };
       return [
@@ -4104,9 +4135,9 @@
         const w = p.state.pianoLocal.clone().applyMatrix4(p.group.matrixWorld);
         const dx = w.x - player.position.x, dz = w.z - player.position.z;
         player.rotation.y = Math.atan2(dx, dz);
-        camYaw = Math.atan2(-dx, -dz);
-        camPitch = 0.32;
-        camDist = 5.5;
+        player.userData.atPiano = true;  // 앉아 있는 동안 두 손을 건반 위에
+        // 정면은 피아노가 가리므로 옆앞에서 — 얼굴과 건반 위의 손이 함께 보이게
+        frontView(player.rotation.y, { dist: 4.6, pitch: 0.3, offs: [1.15, -1.15, 1.5, -1.5, 0.9, -0.9] });
         showPanel(p, true);              // 앉은 뒤에 건반이 나옵니다
         toast('숫자키 1~8 이나 아래 건반을 눌러 보세요 🎹', 3000);
       }],
@@ -4509,6 +4540,7 @@
   // ------------------------------------------------------------------
   let camYaw = 0, camPitch = 0.34, camDist = 9;
   let camDistNow = 9;
+  let lookDrop = 0;       // 패널에 가린 만큼 시선을 내리는 양
   let introOn = true;     // 시작 화면에서는 카메라가 광장을 천천히 돕니다
   let introGlow = 0.16;   // 시작 화면은 조금 더 환하게 — 들어가면 천천히 원래 밝기로
   let detour = 1, detourT = 0, noWayT = 0, detouring = false;   // 벽을 돌아갈 때 쓰는 상태
@@ -5403,7 +5435,12 @@
       const want = head.clone().addScaledVector(dir, camDistNow);
       want.y = Math.max(want.y, groundY(want.x, want.z) + 0.7);
       camera.position.lerp(want, Math.min(1, dt * 5));
-      camera.lookAt(head.x, head.y - 0.15, head.z);
+      // 아래 패널(장소 · 건반)이 화면을 가리는 만큼 시선을 내려, 캐릭터가 패널 위로 보이게 합니다
+      const pnl = document.getElementById('panel');
+      const cover = pnl.classList.contains('show') ? Math.min(0.6, pnl.offsetHeight / window.innerHeight) : 0;
+      const viewH = 2 * camDistNow * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      lookDrop = lerp(lookDrop, cover * viewH * 0.5, Math.min(1, dt * 3));
+      camera.lookAt(head.x, head.y - 0.15 - lookDrop, head.z);
     }
     sky.position.set(camera.position.x, 0, camera.position.z);
     if (!introOn && introGlow > 0.001) introGlow = lerp(introGlow, 0, Math.min(1, dt * 1.2));
