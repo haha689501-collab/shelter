@@ -2397,7 +2397,7 @@
       g.add(roof);
       g.add(mesh(new THREE.BoxGeometry(6.4, 0.2, 2.2), roofM, 0, 2.85, -2.6));
       const sign = makeLabel('🐾 멍냥 쉼터', { size: 36, scale: 0.8 });
-      sign.position.set(0, 2.45, -2.45);
+      sign.position.set(0, 3.55, -2.45);   // 처마 위로 — 카메라 높이(약 2.7m)와 겹치면 간판이 화면을 가렸음
       g.add(sign);
       // 울타리 (앞쪽은 터 둡니다)
       for (let i = 0; i < 28; i++) {
@@ -2417,7 +2417,7 @@
         g.add(mesh(new THREE.CylinderGeometry(0.34, 0.26, 0.2, 14), mat(col, { roughness: 0.6 }), bx, 0.26, bz));
         g.add(mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.05, 14), mat(bz > 0 ? '#9c6b3f' : '#8fd3ff', { roughness: 0.3 }), bx, 0.33, bz));
       }
-      p.state.boxes = [[0, -4.4, 2.8, 1.8]];
+      p.state.boxes = [[0, -4.4, 3.1, 2.05], [0, -2.9, 3.3, 1.3]];   // 가게 — 몸 두께만큼 넉넉히 + 처마 밑(카메라가 지붕 속으로 들어가 화면이 까매짐)
       p.state.petSpots = cushions.map(([cx, cz]) => new THREE.Vector3(cx, 0, cz));
       p.labelY = 6.4;
     }
@@ -3270,8 +3270,15 @@
     if (save) { potLevels[i] = q.level; localStorage.setItem('shelter:pots', JSON.stringify(potLevels)); }
   }
   function petSpotNear() {
-    const a3 = rnd() * Math.PI * 2, r = rnd() * 5.2;
-    return new THREE.Vector3(petCafe.x + Math.cos(a3) * r, 0, petCafe.z + Math.sin(a3) * r);
+    // 가게 안 · 벽 옆(로컬 z < -2.1)은 고르지 않습니다 — 동물이 벽 옆에 가면 쓰다듬을 때 사람도 벽에 붙었음
+    const inv = petCafe.group.matrixWorld.clone().invert();
+    for (let tries = 0; tries < 20; tries++) {
+      const a3 = rnd() * Math.PI * 2, r = rnd() * 5.0;
+      const v = new THREE.Vector3(petCafe.x + Math.cos(a3) * r, 0, petCafe.z + Math.sin(a3) * r);
+      const l = v.clone().applyMatrix4(inv);
+      if (l.z > -2.1 + (Math.abs(l.x) > 3.4 ? -10 : 0)) return v;
+    }
+    return new THREE.Vector3(petCafe.x, 0, petCafe.z);
   }
   let treat = null;
   function showTreat(pos) {
@@ -4103,7 +4110,13 @@
     }
   }
   function faceTo(av, target) {
-    av.rotation.y = Math.atan2(target.position.x - av.position.x, target.position.z - av.position.z);
+    const ry = Math.atan2(target.position.x - av.position.x, target.position.z - av.position.z);
+    av.rotation.y = ry;
+    // 내 캐릭터면 바로 상대에게 알립니다 (예전엔 제자리에서 돌기만 하면 방향을 보내지 않아
+    //   상대 화면에서는 서로 마주 보지 않았음)
+    if (av === player) { netDirty = true; netTimer = 1; }
+    // 다른 접속자 캐릭터는 매 프레임 받은 방향(o.ry)으로 돌아가므로 그 값도 바꿔 둡니다
+    for (const o of others.values()) if (o.av === av) o.ry = ry;
   }
 
   // ---------------- 가위바위보 — 가까이 있는 사람(이웃 · 다른 접속자)과
@@ -4136,6 +4149,7 @@
   }
   // A 와 B 가 함께 "가위 바위 보!" — 1.5초 뒤 머리 위에 낸 손이 뜹니다. mySide: 'a' | 'b' | null
   function rpsShow(avA, pa, avB, pb, mySide) {
+    if (avA && avB) { faceTo(avA, avB); faceTo(avB, avA); }      // 두 사람이 서로 마주 봅니다
     for (const av of [avA, avB]) if (av) av.userData.gesture = { type: 'rps', t: 0, dur: GESTURE_DUR.rps };
     sayBubble(avA, '가위, 바위, 보!');
     setTimeout(() => {
@@ -4266,13 +4280,15 @@
   // 상호작용할 때 '앞모습'이 보이는 시점 — faceYaw(캐릭터가 바라보는 방향) 앞쪽 여러 각도를
   // 실제로 비춰 보고, 벽 · 기둥에 막히지 않는 것 중 정면에 가장 가까운 각도를 고릅니다.
   function frontView(faceYaw, { dist = 5, pitch = 0.24, offs = [0.5, -0.5, 0.9, -0.9, 1.3, -1.3, 1.7, -1.7] } = {}) {
-    const eye = new THREE.Vector3(player.position.x, player.position.y + 1.1, player.position.z);
-    let pick = offs[0];
+    const eye = new THREE.Vector3(player.position.x, player.position.y + 1.5, player.position.z);   // 실제 카메라와 같은 높이에서 시험
+    let pick = offs[0], bestFree = -1;
     for (const off of offs) {
       const a = faceYaw + off;
       camRay.set(eye, new THREE.Vector3(Math.sin(a) * Math.cos(pitch), Math.sin(pitch), Math.cos(a) * Math.cos(pitch)));
       camRay.far = dist + 0.3;
-      if (!camRay.intersectObjects(occluders.concat(viewBlockers), false).length) { pick = off; break; }
+      const h = camRay.intersectObjects(occluders.concat(viewBlockers), false)[0];
+      if (!h) { pick = off; break; }
+      if (h.distance > bestFree) { bestFree = h.distance; pick = off; }   // 모두 막히면 가장 트인 쪽
     }
     camYaw = faceYaw + pick;
     camPitch = pitch;
@@ -4389,10 +4405,18 @@
         const d = new THREE.Vector3(pt.obj.position.x - player.position.x, 0, pt.obj.position.z - player.position.z);
         if (d.lengthSq() < 1e-4) d.set(0, 0, 1);
         d.normalize();
-        const stand = pt.obj.position.clone().addScaledVector(d, -gap);
+        // 서는 자리가 벽 · 기둥에 걸리면 동물의 다른 쪽(옆 · 반대편)에 섭니다
+        let stand = null;
+        for (const turn of [0, 0.8, -0.8, 1.6, -1.6, Math.PI]) {
+          const dd = d.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), turn);
+          const c = pt.obj.position.clone().addScaledVector(dd, -gap);
+          const c2 = c.clone(); pushOut(c2);
+          if (c2.distanceTo(c) < 0.05) { stand = c; d.copy(dd); break; }
+        }
+        if (!stand) { stand = pt.obj.position.clone().addScaledVector(d, -gap); pushOut(stand); }
         player.position.set(stand.x, standY(stand.x, stand.z), stand.z);
-        pushOut(player.position);
         moveTarget = null;
+        d.set(pt.obj.position.x - stand.x, 0, pt.obj.position.z - stand.z).normalize();
         player.rotation.y = Math.atan2(d.x, d.z);
         // 카메라는 동물 쪽(앞)에서 비스듬히 — 내 얼굴과 동물이 함께 보이게
         frontView(Math.atan2(d.x, d.z), { dist: 4.6, pitch: 0.3, offs: [1.3, -1.3, 1.0, -1.0, 1.65, -1.65, 2.1, -2.1] });
@@ -5605,6 +5629,7 @@
           mv = true;
           o.position.x += (dx / d) * speed * dt;
           o.position.z += (dz / d) * speed * dt;
+          pushOut(o.position);                         // 동물도 가게 벽 안으로는 들어가지 않습니다
           o.rotation.y = lerp(o.rotation.y, Math.atan2(dx, dz), Math.min(1, dt * 6));
         } else if (pt.state === 'fetch' && ball) {
           ball.userData.roll = null;
@@ -5900,7 +5925,7 @@
       const block = camBlockD < Infinity ? { distance: camBlockD } : null;
       // 벽에 가리면 가까이 당기고, 벗어나면 천천히 물러납니다.
       // (바로 튕기듯 되돌리면 화면이 흔들립니다)
-      const wantDist = block ? Math.max(1.5, block.distance - 0.45) : camDist;
+      const wantDist = block ? Math.max(0.8, block.distance - 0.45) : camDist;   // 벽 바로 앞이면 더 가까이 (1.5m 를 고집하면 벽 속으로 들어가 화면이 까맣게 됨)
       camDistNow = lerp(camDistNow, wantDist, Math.min(1, dt * (wantDist < camDistNow ? 12 : 2.2)));
       const want = head.clone().addScaledVector(dir, camDistNow);
       want.y = Math.max(want.y, groundY(want.x, want.z) + 0.7);
