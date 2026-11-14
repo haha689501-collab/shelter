@@ -269,7 +269,7 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
   #chat-list { max-height: 28vh; }
 
   /* 숨 고르기 — 글자가 패널과 겹치지 않도록 위쪽에 */
-  #breath { justify-content: flex-start; padding: 16vh 0 0; }
+  #breath { justify-content: flex-start; padding: 22vh 0 0; }   /* 위쪽 알림과 겹치지 않게 조금 아래로 */
   #breath .circle { width: 54vmin; height: 54vmin; margin: -27vmin 0 0 -27vmin; top: 38%; }
   #breath .text { font-size: 17px; }
 
@@ -286,7 +286,7 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
 
 /* 아주 작은 화면 */
 @media (max-width: 400px) {
-  #hud .me:nth-of-type(2) { display: none; }   /* 방 코드 줄은 숨김 (초대는 PC에서) */
+  /* (방 코드 줄은 '몇 명'을 눌러 펼쳤을 때만 보입니다 — 예전 nth-of-type 규칙은 이름 줄을 숨겨 '모습 바꾸기'가 안 보였음) */
   .iconbtn { padding: 6px 8px; font-size: 11.5px; }
 }
 
