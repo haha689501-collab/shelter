@@ -150,6 +150,7 @@ const b = await chromium.launch({ executablePath: EXE, headless: false,
 | 벽 앞에서 화면 떨림 | ① 정면 충돌에도 미끄러짐 ② 카메라가 우회 방향을 쫓음 | 위 '이동 규칙' 참고 |
 | 길찾기가 도착 못 함 | 연못에 정면으로 막혀 멈춤 | 목적지 이동은 **우회** 허용 |
 | Vercel 에 v1 이 뜸 | `/` 요청에 **정적 파일 index.html 이 rewrite 보다 우선** | `.vercelignore` 로 v1 제외 |
+| 배포 후 `/bulmeong/` 404 | ① `.vercelignore` 의 `index.html` · `app.js` 가 **모든 폴더**의 같은 이름 파일을 뺌 ② `cleanUrls` 라 rewrite 대상 `…/index.html` 을 못 찾음 | ① `/index.html` 처럼 앞에 `/` (최상위만) ② 대상은 폴더 주소 `/%EB%B6%88%EB%A9%8D` |
 | Supabase 카운터 오류 | v1 스키마가 `name in ('water','cheer')` 로 제한 | `schema.v2.sql` 로 `happy` 추가 |
 | 파이썬 치환이 조용히 실패 | 들여쓰기가 달라 `str.replace` 가 아무것도 안 바꿈 | **치환마다 `assert s.count(a)==1`** |
 | 온실 나무가 지붕을 뚫음 | 물 줄 때마다 끝없이 커짐(최대 2.4배) | 큰 나무 30번(`TREE_FULL`) · 작은 화분 10번(`POT_FULL`)에 다 자람, 그 뒤엔 '다 자랐어요'. **작은 화분은 들어올 때마다 새싹**(저장 안 함), **큰 나무는 하루마다 새로** — 숫자 칸을 `방#YYYYMMDD` 로 나눔(`counterRoom`), 상대 broadcast 에 `day` 를 실어 자정 넘김 처리 |
