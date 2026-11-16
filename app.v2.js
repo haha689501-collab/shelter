@@ -174,6 +174,10 @@
   // ------------------------------------------------------------------
   // 저장소: 혼자 모드(localStorage) / 함께 모드(Supabase)
   // ------------------------------------------------------------------
+  // 큰 나무(water) 숫자는 '하루'마다 새로 셉니다 — 방 이름 뒤에 날짜를 붙인 칸에 저장 (예: MAIN#20261117).
+  //   DB 의 숫자 이름은 water | cheer | happy 로 묶여 있어서, 이름 대신 방 칸을 날짜별로 나눕니다. (방 이름 최대 30자 이내)
+  const today = () => { const d = new Date(); return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0'); };
+  const counterRoom = (name) => (name === 'water' ? `${room}#${today()}` : room);
   class LocalStore {
     constructor() { this.mode = 'local'; }
     key(k) { return `shelter:${room}:${k}`; }
@@ -185,10 +189,10 @@
       localStorage.setItem(this.key(kind), JSON.stringify(arr.slice(-200)));
       return item;
     }
-    async getCounter(name) { return Number(localStorage.getItem(this.key('c:' + name)) || 0); }
+    async getCounter(name) { return Number(localStorage.getItem(`shelter:${counterRoom(name)}:c:${name}`) || 0); }
     async incCounter(name) {
       const v = (await this.getCounter(name)) + 1;
-      localStorage.setItem(this.key('c:' + name), String(v));
+      localStorage.setItem(`shelter:${counterRoom(name)}:c:${name}`, String(v));
       return v;
     }
     connect() {}
@@ -212,12 +216,12 @@
     }
     async getCounter(name) {
       const { data, error } = await this.sb.from('shelter_counters')
-        .select('value').eq('room', room).eq('name', name).maybeSingle();
+        .select('value').eq('room', counterRoom(name)).eq('name', name).maybeSingle();
       if (error) throw error;
       return Number(data?.value || 0);
     }
     async incCounter(name) {
-      const { data, error } = await this.sb.rpc('shelter_increment', { p_room: room, p_name: name });
+      const { data, error } = await this.sb.rpc('shelter_increment', { p_room: counterRoom(name), p_name: name });
       if (error) throw error;
       return Number(data);
     }
@@ -237,6 +241,11 @@
     send(event, payload) {
       if (this.channel) this.channel.send({ type: 'broadcast', event, payload });
     }
+    // 다른 공간(쉼터 ↔ 불멍)의 인원만 지켜봅니다 — 내 자리는 등록하지 않으므로 그쪽 인원에 세어지지 않습니다
+    watchCount(name, cb) {
+      const ch = this.sb.channel(name, { config: { presence: { key: 'watch-' + me.id } } });
+      ch.on('presence', { event: 'sync' }, () => cb(Object.keys(ch.presenceState()).length)).subscribe();
+    }
   }
 
   let store = new LocalStore();
@@ -254,6 +263,7 @@
   // ------------------------------------------------------------------
   const LOW = (navigator.hardwareConcurrency || 8) <= 4 || /Android|iPhone|iPad/i.test(navigator.userAgent);
   // 휴대폰 (아이폰 · 아이패드 · 안드로이드) — 화면 효과 몇 가지를 끕니다 (아래 설명)
+  const TOUCH = window.matchMedia('(pointer: coarse)').matches;   // 손가락으로 쓰는 화면 — 키보드 안내 대신 터치 안내
   const PHONE = /Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, LOW ? 1.3 : 1.8));
@@ -520,6 +530,7 @@
     ctx.fillText(text, w / 2, h / 2 + 2);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.userData.own = true;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, fog: false }));
     sp.renderOrder = 10;
     const k = 0.011 * scale;
@@ -555,6 +566,22 @@
     return t;
   })();
 
+  // 다 쓴 3D 물체 정리 — 장면에서 빼도 그래픽 메모리(지오메트리 · 텍스처 · 재질)에는 남아 쌓입니다.
+  //   여럿이 오래 있으면 말풍선 · 이모지 · 나간 사람 캐릭터가 계속 쌓여 점점 버벅였습니다 (8명 45초에 텍스처 2배).
+  //   공용으로 쓰는 것(mat() 캐시 재질 · glowTex 같은 공용 텍스처 · 스프라이트 공용 판 · shared 표시한 지오메트리)은 남깁니다.
+  function disposeObj(root) {
+    if (!root) return;
+    const shared = new Set(matCache.values());
+    root.traverse((o) => {
+      if (o.geometry && !o.isSprite && !o.geometry.userData.shared) o.geometry.dispose();
+      const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of ms) {
+        if (shared.has(m)) continue;
+        if (m.map && m.map.userData.own) m.map.dispose();
+        m.dispose();
+      }
+    });
+  }
   function emojiSprite(emoji, size = 1) {
     // 아이폰 이모지는 글꼴보다 크게 그려져 작은 캔버스에선 가장자리가 잘립니다 → 넉넉한 여백
     const c = document.createElement('canvas');
@@ -566,6 +593,7 @@
     g.fillText(emoji, 80, 86);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
+    t.userData.own = true;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false, fog: false }));
     sp.renderOrder = 11;
     sp.scale.set(size * 1.25, size * 1.25, 1);   // 여백만큼 키워 보이는 크기는 예전과 같게
@@ -614,17 +642,49 @@
   // ------------------------------------------------------------------
   const night = { mix: 0, stars: null, sun: null, halo: null, clouds: [], dipper: null, shoot: [] };
   {
-    const n = 1400, pos = new Float32Array(n * 3), sz = new Float32Array(n);
+    // 별 — 하늘 전체(구 표면)에 '고르게' 뿌립니다. 높이(y)를 균일하게 뽑으면 같은 넓이에 같은 수가 들어갑니다.
+    //   (예전엔 천정 쪽 약 25° 를 빼고 뿌려서, 누워 올려다보면 가운데에 둥근 구멍이 보였음)
+    //   크기 · 색 · 반짝이는 박자가 저마다 다르고, 은은하게 깜빡입니다. (불멍 캠프의 하늘과 같은 방식)
+    const n = LOW ? 2200 : 4000;
+    const pos = new Float32Array(n * 3), size = new Float32Array(n), phase = new Float32Array(n), col = new Float32Array(n * 3);
     for (let i2 = 0; i2 < n; i2++) {
-      const th = rnd() * Math.PI * 2, ph = Math.acos(rnd() * 0.85 + 0.05), r = 380;
-      pos[i2 * 3] = r * Math.sin(ph) * Math.cos(th);
-      pos[i2 * 3 + 1] = r * Math.cos(ph);
-      pos[i2 * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
-      sz[i2] = rnd();
+      const y = -0.08 + rnd() * 1.08, th = rnd() * Math.PI * 2, rr = Math.sqrt(1 - y * y), r = 380;
+      pos[i2 * 3] = r * rr * Math.cos(th);
+      pos[i2 * 3 + 1] = r * y;
+      pos[i2 * 3 + 2] = r * rr * Math.sin(th);
+      const big = rnd();
+      size[i2] = big > 0.988 ? 4.2 + rnd() * 2 : big > 0.92 ? 2.4 + rnd() * 1.3 : 1.1 + rnd() * 1.2;
+      phase[i2] = rnd();
+      const tint = rnd();
+      const c3 = tint < 0.15 ? [1, 0.82, 0.66] : tint < 0.35 ? [0.75, 0.85, 1] : [1, 0.97, 0.92];
+      col.set(c3, i2 * 3);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    night.stars = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.25 }));
+    g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+    g.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+    g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+    night.stars = new THREE.Points(g, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
+      uniforms: { uTime: { value: 0 }, uPR: { value: renderer.getPixelRatio() }, uShow: { value: 0 } },
+      vertexShader: `
+        attribute float aSize; attribute float aPhase; attribute vec3 aColor;
+        uniform float uTime; uniform float uPR; varying vec3 vC; varying float vA;
+        void main(){
+          vC = aColor;
+          vA = 0.62 + 0.38 * sin(uTime * (0.8 + aPhase * 1.7) + aPhase * 40.0);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = aSize * uPR;
+        }`,
+      fragmentShader: `
+        varying vec3 vC; varying float vA; uniform float uShow;
+        void main(){
+          float r = length(gl_PointCoord - 0.5);
+          float a = smoothstep(0.5, 0.0, r); a *= a;
+          gl_FragColor = vec4(vC * a * vA * uShow * 1.5, 1.0);
+        }`,
+    }));
+    night.stars.frustumCulled = false;
     scene.add(night.stars);
 
     night.sun = mesh(new THREE.SphereGeometry(13, 24, 16), new THREE.MeshBasicMaterial({ color: 0xfff0cd, fog: false, transparent: true }), -230, 42, -190);
@@ -672,7 +732,7 @@
       },
     ];
     const dip = new THREE.Group();
-    const haloMat = new THREE.SpriteMaterial({ map: glowTex, color: '#9fc4ff', transparent: true, opacity: 0.5, depthWrite: false, fog: false, blending: THREE.AdditiveBlending });
+    const haloMat = new THREE.SpriteMaterial({ map: glowTex, color: '#9fc4ff', transparent: true, opacity: 0.22, depthWrite: false, fog: false, blending: THREE.AdditiveBlending });
     const coreMat = new THREE.SpriteMaterial({ map: glowTex, color: '#ffffff', transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending });
     const lineMat2 = new THREE.LineBasicMaterial({ color: '#6f8fc8', transparent: true, opacity: 0.2, fog: false });
     for (const C2 of CONSTELLATIONS) {
@@ -686,11 +746,11 @@
         const big = C2.bright.includes(i3) ? 1.3 : 1;
         const h2 = new THREE.Sprite(haloMat);
         h2.position.copy(pt);
-        h2.scale.setScalar(7.5 * big);
+        h2.scale.setScalar(3.6 * big);
         dip.add(h2);
         const core = new THREE.Sprite(coreMat);
         core.position.copy(pt);
-        core.scale.setScalar(2.6 * big);
+        core.scale.setScalar(1.9 * big);
         dip.add(core);
       });
       const linePos = [];
@@ -745,9 +805,8 @@
     skyMat.uniforms.mid.value.copy(DAY.mid).lerp(NGT.mid, m);
     skyMat.uniforms.bottom.value.copy(DAY.bot).lerp(NGT.bot, m);
     scene.fog.color.copy(DAY.fog).lerp(NGT.fog, m);
-    night.stars.material.opacity = m < 0.05 ? 0 : 0.25 + m * 0.75;   // 낮(노을)에는 별을 숨깁니다 — 하늘에 점처럼 보였음
+    night.stars.material.uniforms.uShow.value = m < 0.05 ? 0 : m;   // 낮(노을)에는 별을 숨깁니다 — 하늘에 점처럼 보였음
     night.stars.visible = m >= 0.05;
-    night.stars.material.size = 2 + m * 0.8;
     night.sun.material.opacity = 1 - m;
     night.halo.material.opacity = 0.9 * (1 - m);
     for (const cl of night.clouds) cl.material.opacity = cl.userData.base * (1 - m * 0.75);
@@ -1985,9 +2044,12 @@
     greenhouse(p, g) {
       p.state.pots = [];
       const W = 12, D = 9, H = 4.2;
-      const glass = new THREE.MeshPhysicalMaterial({
-        color: '#dff2fb', transparent: true, opacity: 0.22, roughness: 0.08, metalness: 0,
-        transmission: 0.25, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.4,
+      // 반투명 유리 — 투과(transmission)는 쓰지 않습니다. 투과 재질이 화면에 들어오면 three.js 가 장면 전체를
+      //   한 번 더 그려서(매 프레임) 무거워지고, 처음 보일 때 셰이더 15개를 새로 만드느라 몇 초씩 멈췄습니다.
+      //   투명도 0.22 라 겉보기 차이는 거의 없습니다.
+      const glass = new THREE.MeshStandardMaterial({
+        color: '#dff2fb', transparent: true, opacity: 0.24, roughness: 0.08, metalness: 0,
+        side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.4,
       });
       for (const [gw, gx, gz, ry] of [[W, 0, -D / 2, 0], [D, -W / 2, 0, Math.PI / 2], [D, W / 2, 0, Math.PI / 2]]) {
         const pane = mesh(new THREE.PlaneGeometry(gw, H), glass, gx, H / 2, gz);
@@ -3257,7 +3319,9 @@
     pt.tag = lb;
   });
   // 번호표 — 온실 화분 (1~8 · ★ 큰 화분), 화분마다 따로 자랍니다
-  const potLevels = (() => { try { return JSON.parse(localStorage.getItem('shelter:pots') || '[]'); } catch (e) { return []; } })();
+  // 작은 화분은 들어올 때마다 새싹부터 — 예전엔 브라우저에 영원히 남아, 한 번 다 키우면 다시 물을 줄 수 없었음
+  localStorage.removeItem('shelter:pots');
+  const potLevels = [];
   {
     const gh0 = byType('greenhouse')[0];
     if (gh0) (gh0.state.pots || []).forEach((q, i) => {
@@ -3273,8 +3337,8 @@
     const gh0 = byType('greenhouse')[0];
     const q = gh0 && gh0.state.pots[i];
     if (!q || q.central) return;
-    q.level = Math.min(12, (q.level || 0) + 1);
-    if (save) { potLevels[i] = q.level; localStorage.setItem('shelter:pots', JSON.stringify(potLevels)); }
+    q.level = Math.min(POT_FULL, (q.level || 0) + 1);
+    if (save) potLevels[i] = q.level;
   }
   function petSpotNear() {
     // 가게 안 · 벽 옆(로컬 z < -2.1)은 고르지 않습니다 — 동물이 벽 옆에 가면 쓰다듬을 때 사람도 벽에 붙었음
@@ -3354,6 +3418,20 @@
   }
 
   const risingStars = [];
+  const wishStarTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(32, 32, 0, 32, 32, 7);
+    grd.addColorStop(0, 'rgba(255,255,255,1)');
+    grd.addColorStop(0.35, 'rgba(255,250,235,.85)');
+    grd.addColorStop(1, 'rgba(255,245,225,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
   function addStarMesh(item, fromPos) {
     const field = byType('field')[0];
     if (!field || seen.has('w' + item.id)) return;
@@ -3362,8 +3440,10 @@
     const r = seeded(hashStr(String(item.id) + item.text));
     const a = r() * Math.PI * 2, rad = 4 + r() * 26;
     const target = new THREE.Vector3(field.x + Math.cos(a) * rad, 26 + r() * 20, field.z + Math.sin(a) * rad);
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#fff2c8', transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
-    sp.scale.setScalar(3.2);
+    // 작고 또렷한 별 한 점 — 큰 빛무리(glowTex)를 쓰면 누워 볼 때 노란 공처럼 보였습니다.
+    //   그림은 가운데 작은 점뿐이지만 판은 넉넉해서, 누르면 소원을 읽기는 쉽습니다.
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: wishStarTex, color: '#fffaf0', transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+    sp.scale.setScalar(2.6);
     sp.userData = { kind: 'star', text: item.text, phase: r() * 6 };
     if (fromPos) {
       sp.position.copy(fromPos);
@@ -3379,12 +3459,15 @@
   }
 
   const counters = { water: 0, cheer: 0, happy: 0 };
+  // 다 자라는 횟수 — 큰 나무는 모두 합쳐 30번, 작은 화분은 10번.
+  //   (예전엔 물을 줄 때마다 계속 커져 최대 2.4배 — 온실 지붕(4.2m)을 뚫고 올라갔음)
+  const TREE_FULL = 30, POT_FULL = 10;
   function applyCounter(name, value) {
     counters[name] = Math.max(counters[name], value);
     const gh = byType('greenhouse')[0];
     if (name === 'water' && gh) {
       const v = counters.water;
-      gh.state.plant.userData.target = 0.6 + Math.min(1.8, Math.log10(1 + v) * 0.75);
+      gh.state.plant.userData.target = 0.6 + 0.6 * Math.min(v, TREE_FULL) / TREE_FULL;   // 다 자라면 1.2배 — 꼭대기가 지붕 바로 아래
       gh.state.flowers.visible = v >= 10;
     }
     refreshPanelInfo();
@@ -3741,6 +3824,7 @@
   const floaters = [];
   // 응원봉 — 무지개색이 막대를 따라 흐르며 빛납니다 (블룸 효과로 은은하게 번짐)
   const stickHandleGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.16, 10);
+  stickHandleGeo.userData.shared = true;   // 여러 응원봉이 함께 씀 — 정리할 때 지우지 않게
   function makeGlowStick() {
     const g = new THREE.Group();
     g.add(mesh(stickHandleGeo, mat('#2b2b3a', { roughness: 0.5 }), 0, -0.27, 0));
@@ -4277,11 +4361,16 @@
     $('#breath-circle').style.transform = 'scale(.6)';
   }
 
+  let counterDay = today();
   async function bump(name) {
     try {
+      if (name === 'water' && today() !== counterDay) {   // 자정을 넘겨 머물렀으면 큰 나무도 오늘 새싹부터
+        counterDay = today();
+        counters.water = 0;
+      }
       const v = await store.incCounter(name);
       applyCounter(name, v);
-      store.send('act', { id: me.id, type: 'counter', name, value: v });
+      store.send('act', { id: me.id, type: 'counter', name, value: v, day: counterDay });
     } catch (e) { console.warn(e); toast('저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
   }
 
@@ -4330,10 +4419,16 @@
     greenhouse: (p) => [
       ['💧 물 주기', () => {
         const pots = p.state.pots || [];
-        pickFrom('어느 화분에 물을 줄까요?', pots.map((q, i) => (q.central ? '★ 큰 화분' : String(i + 1))), (i) => {
+        const full = (q) => (q.central ? counters.water >= TREE_FULL : (q.level || 0) >= POT_FULL);
+        pickFrom('어느 화분에 물을 줄까요?', pots.map((q, i) => (q.central ? '★ 큰 화분' : String(i + 1)) + (full(q) ? ' ✓' : '')), (i) => {
           // (번호표는 고르는 동안만 보입니다 — 아래 pots.map((q) => q.tag))
-          if (!cool('water', 2500)) return;
           const best = pots[i];
+          // 다 자란 화분은 더 주지 않습니다
+          if (full(best)) {
+            toast(best.central ? '오늘은 큰 나무가 다 자랐어요 🌸 내일 다시 새싹부터 함께 키워요' : `${i + 1}번 화분은 다 자랐어요 🌼 다른 화분은 어때요?`, 2600);
+            return;
+          }
+          if (!cool('water', 2500)) return;
           const bestW = best.local.clone().applyMatrix4(p.group.matrixWorld);
           // 선반 화분은 '가까운 통로'에 섭니다 — 안쪽 줄은 가운데 통로, 바깥 줄은 유리벽 쪽 통로.
           //   (화분에서 아무 방향으로 물러서면 선반에 부딪혀 옆으로 밀려나, 테이블에 물을 주게 됩니다)
@@ -4360,11 +4455,11 @@
           chime();
           if (best.central) {
             bump('water');                       // 큰 화분은 모두가 준 물로 자랍니다
-            toast('큰 화분에 물을 주었어요 💧', 2000);
+            toast(counters.water + 1 >= TREE_FULL ? '큰 나무가 다 자랐어요 🌸 고마워요!' : `큰 나무에 물을 주었어요 💧 (${counters.water + 1} / ${TREE_FULL})`, 2000);
           } else {
             growPot(i, true);
             setTimeout(() => floatEmoji('🌱', bestW.clone().add(new THREE.Vector3(0, 0.9, 0)), 0.45), 1400);
-            toast(`${i + 1}번 화분이 쑥 자랐어요 🌱 (${best.level}번째)`, 2000);
+            toast(best.level >= POT_FULL ? `${i + 1}번 화분이 다 자랐어요 🌼` : `${i + 1}번 화분이 쑥 자랐어요 🌱 (${best.level} / ${POT_FULL})`, 2000);
           }
           store.send('act', { id: me.id, type: 'water', pot: i });
         }, pots.map((q) => q.tag));
@@ -4569,7 +4664,7 @@
         // 정면은 피아노가 가리므로 옆앞에서 — 얼굴과 건반 위의 손이 함께 보이게
         frontView(player.rotation.y, { dist: 4.6, pitch: 0.3, offs: [1.15, -1.15, 1.5, -1.5, 0.9, -0.9] });
         showPanel(p, true);              // 앉은 뒤에 건반이 나옵니다
-        toast('숫자키 1~8 이나 아래 건반을 눌러 보세요 🎹', 3000);
+        toast(TOUCH ? '아래 건반을 눌러 보세요 🎹' : '숫자키 1~8 이나 아래 건반을 눌러 보세요 🎹', 3000);
       }],
       ['🎵 한 소절 쳐 보기', () => playMelody()],
       ['🎧 힐링 음악 듣기', () => toggleHealing()],
@@ -4590,7 +4685,7 @@
         night.skyTurn = 0;              // 누울 때는 북두칠성이 처음 자리에서 시작
         camYaw = 0.78;                  // 북두칠성이 보이는 쪽
         showPanel(p, true);
-        toast('드래그해서 밤하늘을 둘러보세요 · 일어나려면 아래 \'일어나기\' 또는 W A S D ✨', 5000);
+        toast(TOUCH ? '화면을 끌어서 밤하늘을 둘러보세요 · 일어나려면 아래 \'일어나기\' ✨' : '드래그해서 밤하늘을 둘러보세요 · 일어나려면 아래 \'일어나기\' 또는 W A S D ✨', 5000);
       }],
       ['⭐ 소원 별 띄우기', () => writeMessage('wish')],
       ['✨ 소원 하나 읽기', () => readRandom(wishes, '⭐', '아직 소원 별이 없어요. 첫 별을 띄워 볼까요?')],
@@ -4657,6 +4752,7 @@
     np.rotation.y = old.rotation.y;
     np.userData.pose = old.userData.pose;
     scene.remove(old);
+    disposeObj(old);
     scene.add(np);
     player = np;
     netDirty = true;
@@ -4779,7 +4875,7 @@
   const bubbles = [];
   function sayBubble(av, text) {
     const u = av.userData;
-    if (u.bubble) { av.remove(u.bubble); u.bubble = null; }
+    if (u.bubble) { av.remove(u.bubble); disposeObj(u.bubble); u.bubble = null; }
     const lb = makeLabel(text, { size: 30, scale: 0.55, bg: 'rgba(255,255,255,.88)', color: '#2a2338' });
     lb.position.y = 2.55;
     av.add(lb);
@@ -4821,13 +4917,13 @@
     if (!p) return '';
     if (p.type === 'greenhouse') {
       const v = counters.water;
-      const stage = v >= 100 ? '활짝 핀 꽃' : v >= 10 ? '꽃이 피었어요' : v >= 3 ? '새잎이 났어요' : '새싹';
-      return `모두가 준 물 ${v}번 · 지금은 "${stage}"`;
+      const stage = v >= TREE_FULL ? '다 자랐어요 🌸' : v >= 10 ? '꽃이 피었어요' : v >= 3 ? '새잎이 났어요' : '새싹';
+      return `오늘 큰 나무에 준 물 ${Math.min(v, TREE_FULL)} / ${TREE_FULL}번 · 지금은 "${stage}" · 작은 화분은 들어올 때마다 새싹부터`;
     }
     if (p.type === 'cafe') return `지금까지 오간 "수고했어" ${counters.cheer}번`;
     if (p.type === 'hill') return `소나무에 걸린 쪽지 ${notes.length}장`;
     if (p.type === 'field') return `하늘에 뜬 소원 별 ${wishes.length}개`;
-    if (p.type === 'music') return '숫자키 1~8 로도 칠 수 있어요';
+    if (p.type === 'music') return TOUCH ? '아래 건반을 눌러 쳐 보세요' : '숫자키 1~8 로도 칠 수 있어요';
     if (p.type === 'petcafe') return `동물들이 받은 사랑 ${counters.happy}번`;
     if (p.type === 'plaza') return '물소리를 들으며 잠깐 쉬어 가세요';
     return '';
@@ -4900,7 +4996,7 @@
       if ($('#who').classList.contains('open')) renderWho();
       for (const [id, o] of others) if (!ids.includes(id)) {
         if (o.name && performance.now() > joinQuietUntil) announce(`🚶 ${o.name}님이 나갔어요`, false);
-        scene.remove(o.av); others.delete(id);
+        scene.remove(o.av); disposeObj(o.av); others.delete(id);
       }
       if (!roomChecked && n > 0) {
         roomChecked = true;
@@ -4985,6 +5081,7 @@
         waterEffect(false, q);
         if (q && !q.central) growPot(a.pot, false);
       }
+      if (a.type === 'counter' && a.name === 'water' && typeof a.day === 'string' && a.day > counterDay) { counterDay = a.day; counters.water = 0; }   // 상대가 이미 새 날이면 나도 새싹부터
       if (a.type === 'counter' && counters[a.name] !== undefined) applyCounter(a.name, Number(a.value) || 0);
     },
     onChat(c) {
@@ -5035,11 +5132,19 @@
 
   const canvas = renderer.domElement;
   let drag = null;
+  // 두 손가락 벌리기 · 모으기로 확대 · 축소 (휴대폰엔 휠이 없음)
+  const touches = new Map();
+  let pinch = null;
+  const pinchDist = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
   canvas.addEventListener('pointerdown', (e) => {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size === 2) { pinch = { d: pinchDist(), base: camDist }; if (drag) drag.moved = 999; return; }
     drag = { x: e.clientX, y: e.clientY, moved: 0 };
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', (e) => {
+    if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && touches.size === 2) { camDist = clamp(pinch.base * pinch.d / pinchDist(), 3.4, 22); return; }
     if (!drag) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.moved += Math.abs(dx) + Math.abs(dy);
@@ -5049,9 +5154,12 @@
     camPitch = clamp(camPitch + dy * 0.004, camMode === 'lie' ? 0.5 : 0.04, camMode === 'lie' ? 1.45 : 1.2);
   });
   canvas.addEventListener('pointerup', (e) => {
+    touches.delete(e.pointerId);
+    if (touches.size < 2) pinch = null;
     if (drag && drag.moved < 8) handleClick(e);
     drag = null;
   });
+  canvas.addEventListener('pointercancel', (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; drag = null; });
   canvas.addEventListener('wheel', (e) => { camDist = clamp(camDist + e.deltaY * 0.01, 3.4, 22); }, { passive: true });
 
   const raycaster = new THREE.Raycaster();
@@ -5093,6 +5201,7 @@
 
   // 대화창
   const chatInput = $('#chat-input');
+  if (TOUCH) chatInput.placeholder = chatInput.placeholder.replace(/\s*\(Enter\)/, '');
   const openChat = (open) => {
     $('#chat').classList.toggle('open', open);
     if (open) setTimeout(() => chatInput.focus(), 30); else chatInput.blur();
@@ -5193,6 +5302,7 @@
     const nl = makeLabel(me.name, { size: 32, scale: 0.44 });
     nl.position.copy(old.position);
     player.remove(old);
+    disposeObj(old);
     player.add(nl);
     player.userData.label = nl;
     netDirty = true;
@@ -5216,20 +5326,21 @@
     ? `함께 모드 · 방 "${room}"`
     : '혼자 모드 · 쪽지와 소원은 이 브라우저에만 저장돼요';
   if (store.mode === 'local') $('#people').textContent = '혼자 모드로 쉬는 중';
-  await setupComposer();
-  await loadData();
-  // 미리 데워 두기 — 들어가는 순간 처음 보이는 것들(캐릭터 주변 · 그림자)을 그리느라 몇 초 멈추던 것을
-  //   '불러오는 중…' 동안 미리 한 번 그려 둡니다.
+  await Promise.all([setupComposer(), loadData()]);   // 빛 효과 준비와 데이터 불러오기를 동시에
+  // 셰이더 미리 준비 — 들어가는 순간 처음 그릴 때 멈추지 않게.
+  //   예전엔 네 방향을 실제로 한 번씩 그려 보며 데웠는데, 쉼터는 장면이 커서 이 단계만 10~24초가 걸려
+  //   불멍 ↔ 쉼터 이동이 매우 느렸습니다. 이제 셰이더만 비동기로 준비해서 '불러오는 중 · 가는 중' 표시도 멈추지 않습니다.
+  //   (처음 몇 프레임은 시작 화면 · 이동 막 뒤에서 그려져 사용자에게 보이지 않습니다)
   try {
-    renderer.compile(scene, camera);
-    const sp = camera.position.clone(), sq = camera.quaternion.clone();
-    for (const [dx, dz] of [[0, 9], [9, 0], [0, -9], [-9, 0]]) {
-      camera.position.set(player.position.x + dx, player.position.y + 4, player.position.z + dz);
-      camera.lookAt(player.position.x, player.position.y + 1.2, player.position.z);
-      if (composer) composer.render(0.016); else renderer.render(scene, camera);
-    }
-    camera.position.copy(sp); camera.quaternion.copy(sq);
-  } catch (e) { console.warn('미리 그리기 생략', e); }
+    // ① 장면의 모든 재질(숨겨진 것 포함) 셰이더를 비동기로 준비
+    // 빛 번짐(블룸)을 쓰면 장면은 화면이 아니라 '중간 그림판'에 그려집니다 — 셰이더도 그 대상으로 준비해야 다시 만들지 않음
+    if (composer) renderer.setRenderTarget(composer.readBuffer);
+    if (renderer.compileAsync) await renderer.compileAsync(scene, camera);
+    else renderer.compile(scene, camera);
+    renderer.setRenderTarget(null);
+    // ② 지금 시점에서 딱 한 번 그려 그림자 · 빛 번짐 셰이더까지 준비 (예전엔 네 방향을 그려서 매우 느렸음)
+    if (composer) composer.render(0.016); else renderer.render(scene, camera);
+  } catch (e) { console.warn('미리 준비 생략', e); }
   const enterBtn = $('#enter');
   enterBtn.disabled = false;
   enterBtn.textContent = '들어가기';
@@ -5293,6 +5404,64 @@
   // ------------------------------------------------------------------
   // 루프
   // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // 쉼터 ↔ 불멍 오가기 — 길찾기 버튼 하나로 다른 공간으로 넘어갑니다
+  //   이름 · 모습(localStorage)과 방 코드(?room=)가 그대로 따라가고,
+  //   ?go=1 로 건너오면 시작 화면 없이 바로 들어갑니다.
+  // ------------------------------------------------------------------
+  {
+    const OTHER = { label: '🔥 불멍 캠프', goText: '🔥 불멍 캠프로 가는 중', local: '불멍/index.html', web: '/bulmeong/' };
+    const otherUrl = () => {
+      const base = location.protocol === 'file:' ? new URL(OTHER.local, location.href).href : new URL(OTHER.web, location.origin).href;
+      return base + '?room=' + encodeURIComponent(room) + '&go=1';
+    };
+    const fade = $('#fade');
+    const portalBtn = el('button', { type: 'button', className: 'portal' }, [el('span', { textContent: OTHER.label }), el('span', { className: 'cnt' })]);
+    portalBtn.onclick = () => {
+      if (window.innerWidth <= 760) $('#places').classList.remove('open');
+      fade.querySelector('.go-text').textContent = OTHER.goText;               // '○○로 가는 중'
+      fade.classList.add('on');                                               // 화면이 천천히 어두워지고
+      if (master && actx) master.gain.setTargetAtTime(0, actx.currentTime, 0.15);   // 소리도 함께 잦아든 뒤
+      setTimeout(() => location.assign(otherUrl()), 350);                      // 건너갑니다 (기다림은 짧게)
+    };
+    $('#places').append(portalBtn);
+    // 건너편 공간에 지금 몇 명 있는지 (함께 모드일 때만)
+    if (store.watchCount) store.watchCount(`bulmeong:${room}`, (n) => { portalBtn.querySelector('.cnt').textContent = n > 0 ? ` · 지금 ${n}명` : ''; });
+    // 건너왔으면 — 시작 화면 없이 바로 들어갑니다. 주소의 go=1 은 지워서, 그 주소를 공유하면 시작 화면부터 보이게.
+    if (params.get('go') === '1') {
+      const u = new URL(location.href);
+      u.searchParams.delete('go');
+      history.replaceState(null, '', u.toString());
+      // 바로 아래에서 선언되는 루프 변수(netDirty 등)가 준비된 뒤에 들어가도록 한 박자 늦춥니다
+      setTimeout(() => {
+        enterBtn.click();
+        document.documentElement.classList.remove('arriving');
+        fade.classList.remove('instant');
+        // 처음 몇 프레임(셰이더 · 그림자 첫 준비)은 막 뒤에서 그린 다음 걷습니다 — 들어가자마자 버벅이는 모습이 보이지 않게
+        let frames = 0;
+        const reveal = () => (++frames < 5 ? requestAnimationFrame(reveal) : fade.classList.remove('on'));
+        requestAnimationFrame(reveal);
+      }, 0);
+      // 브라우저가 새 화면의 소리를 막았으면 — 한 번 누르면 켜지도록 안내
+      setTimeout(() => {
+        if (!actx || actx.state === 'running' || muted) return;
+        const pill = $('#sound-tap');
+        pill.classList.add('show');
+        const on = () => {
+          actx.resume();
+          startAmbient();
+          pill.classList.remove('show');
+          window.removeEventListener('pointerdown', on, true);
+          window.removeEventListener('keydown', on, true);
+        };
+        window.addEventListener('pointerdown', on, true);
+        window.addEventListener('keydown', on, true);
+      }, 500);
+    }
+  }
+
+  // 확인용 — 그래픽 메모리(지오메트리 · 텍스처 수)와 셰이더 수
+  window.__dbg = () => ({ ...renderer.info.memory, programs: renderer.info.programs.length, others: others.size });
   const clock = new THREE.Clock();
   let netDirty = true, netTimer = 0, lastSentX = 0, lastSentZ = 0;
   const tmp = new THREE.Vector3();
@@ -5528,8 +5697,13 @@
     // 다른 사람들
     for (const o of others.values()) {
       const px2 = o.av.position.x, pz = o.av.position.z;
-      o.av.position.x = lerp(px2, o.tx, Math.min(1, dt * 8));
-      o.av.position.z = lerp(pz, o.tz, Math.min(1, dt * 8));
+      // 받은 위치까지 걸음 속도로 이어 걷습니다 — 위치를 드물게 받아도 뚝뚝 끊기지 않게. 멀리 떨어졌거나 앉고 누울 땐 바로.
+      const dxr = o.tx - px2, dzr = o.tz - pz, dr = Math.hypot(dxr, dzr);
+      if (dr > 1e-4) {
+        const stepR = dr > 4 || o.av.userData.pose !== 'stand' ? dr : Math.min(dr, 5.6 * dt * (dr > 1.2 ? 1.5 : 1));
+        o.av.position.x = px2 + (dxr / dr) * stepR;
+        o.av.position.z = pz + (dzr / dr) * stepR;
+      }
       o.av.position.y = standY(o.av.position.x, o.av.position.z) + (o.av.userData.pose === 'sit' ? Math.max(0, (o.lift || 0) - 0.42) : 0);
       o.av.rotation.y = o.ry;
       animateAvatar(o.av, dt, Math.hypot(o.tx - px2, o.tz - pz) > 0.05);
@@ -5817,7 +5991,7 @@
           k.obj.position.x = k.base.x + Math.sin((t + k.off) * 0.37) * 0.35;
         }
         for (const s of p.state.stars.children) {
-          const k = 3 + Math.sin(t * 1.5 + s.userData.phase) * 0.5;
+          const k = 2.6 + Math.sin(t * 1.5 + s.userData.phase) * 0.25;   // 은은하게 깜빡
           s.scale.set(k, k, 1);
         }
       }
@@ -5839,13 +6013,13 @@
         if (f.t < f.hold) f.s.position.y += Math.sin(f.t * 4) * 0.002;
         else f.s.position.y += dt * 0.55;
         f.s.material.opacity = 1 - smooth(f.hold, f.hold + 1.6, f.t);
-        if (f.t > f.hold + 1.6) { scene.remove(f.s); floaters.splice(i, 1); }
+        if (f.t > f.hold + 1.6) { scene.remove(f.s); disposeObj(f.s); floaters.splice(i, 1); }
         continue;
       }
       f.s.position.y += dt * 1.2;
       f.s.position.x += f.vx * dt;
       f.s.material.opacity = 1 - f.t / 2;
-      if (f.t > 2) { scene.remove(f.s); floaters.splice(i, 1); }
+      if (f.t > 2) { scene.remove(f.s); disposeObj(f.s); floaters.splice(i, 1); }
     }
     // 물뿌리개 — 기울였다 세우고, 그동안 물줄기가 쏟아집니다
     if (pour) {
@@ -5893,6 +6067,7 @@
       bb.t += dt;
       if (bb.t > 6) {
         if (bb.av.userData.bubble === bb.lb) { bb.av.remove(bb.lb); bb.av.userData.bubble = null; }
+        if (!bb.lb.parent) disposeObj(bb.lb);
         bubbles.splice(i, 1);
       }
     }
@@ -6024,6 +6199,7 @@
     if (night.mix > 0.05) {
       night.skyTurn = (night.skyTurn || 0) + dt * 0.006;
       night.stars.rotation.y = night.skyTurn;
+      night.stars.material.uniforms.uTime.value = clock.elapsedTime;   // 반짝임
       night.dipper.rotation.y = night.skyTurn;
     }
     if (!introOn && introGlow > 0.001) introGlow = lerp(introGlow, 0, Math.min(1, dt * 1.2));
@@ -6034,7 +6210,8 @@
     //   ① 초당 4회까지  ② 위치가 0.08 이상 움직였거나 자세가 바뀌었을 때만
     netTimer += dt;
     const movedEnough = Math.hypot(player.position.x - lastSentX, player.position.z - lastSentZ) > 0.08;
-    if (netTimer > 0.25 && (netDirty || movedEnough)) {
+const sendGap = presentIds.length <= 4 ? 0.25 : presentIds.length <= 8 ? 0.4 : 0.6;   // 사람이 많을수록 덜 자주 (메시지 한도)
+    if (netTimer > sendGap && (netDirty || movedEnough)) {
       lastSentX = player.position.x;
       lastSentZ = player.position.z;
       netTimer = 0;

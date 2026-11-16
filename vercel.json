@@ -2,6 +2,9 @@
   "cleanUrls": true,
   "rewrites": [
     { "source": "/", "destination": "/index.v2.html" },
-    { "source": "/room/:code", "destination": "/index.v2.html" }
+    { "source": "/room/:code", "destination": "/index.v2.html" },
+    { "source": "/bulmeong", "destination": "/%EB%B6%88%EB%A9%8D/index.html" },
+    { "source": "/bulmeong/", "destination": "/%EB%B6%88%EB%A9%8D/index.html" },
+    { "source": "/bulmeong/:path*", "destination": "/%EB%B6%88%EB%A9%8D/:path*" }
   ]
 }

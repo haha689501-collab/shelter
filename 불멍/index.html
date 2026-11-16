@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>불멍 캠프</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
+<meta name="description" content="별이 쏟아지는 밤, 숲속 모닥불 앞에 둘러앉아 멍하니 쉬어 가는 3D 공간.">
+<meta name="theme-color" content="#0a1124">
+<meta property="og:type" content="website">
+<meta property="og:title" content="불멍 캠프 — 별 아래 모닥불">
+<meta property="og:description" content="모닥불 앞에 앉아 불멍하고, 마시멜로를 굽고, 풍등을 띄워요. 방 코드만 있으면 함께 들어옵니다.">
+<meta property="og:site_name" content="불멍 캠프">
+<!-- 빛 번짐(블룸) 모듈이 'three' 라는 이름으로 three.js 를 찾습니다. 같은 주소로 이어 줘야 블룸이 켜집니다 -->
+<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
+<link rel="stylesheet" href="style.css">
+<!-- 3D 엔진 · 함께 모드 파일을 페이지를 여는 즉시 미리 받아 둡니다 (쉼터 ↔ 불멍 이동을 조금이라도 빠르게) -->
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="preconnect" href="https://esm.sh" crossorigin>
+<link rel="modulepreload" href="https://unpkg.com/three@0.160.0/build/three.module.js" crossorigin>
+<script src="config.js"></script>
+<script>
+  // 주소가 /불멍 처럼 끝에 / 없이 열리면 style.css · app.js 를 못 찾습니다 → /불멍/ 으로 고쳐 엽니다
+  if (/^https?:$/.test(location.protocol) && !location.pathname.endsWith('/') && !/\.html$/.test(location.pathname))
+    location.replace(location.pathname + '/' + location.search + location.hash);
+</script>
+</head>
+<body class="intro">
+<div id="app"></div>
+<div id="vignette"></div>
+<!-- 다른 공간으로 넘어갈 때 어두워지는 막 · 건너온 직후 소리 켜기 안내 -->
+<div id="fade"><div class="go-msg"><span class="go-text">🔥 불멍 캠프로 가는 중</span><span class="go-dots"><i></i><i></i><i></i></span></div></div>
+<script>
+  // 건너오는 중이면 — 처음부터 완전히 어두운 막 + '가는 중' 표시 (장면을 만드는 몇 초 동안)
+  if (/[?&]go=1/.test(location.search)) { document.getElementById('fade').classList.add('on', 'instant'); document.documentElement.classList.add('arriving'); }
+</script>
+<button id="sound-tap" class="glass" type="button">🔊 화면을 누르면 소리가 켜져요</button>
+
+<div id="hud" class="glass">
+  <span class="title" id="hud-title">불멍 캠프</span>
+  <button class="meta people" id="people" type="button" title="누가 있는지 보기">혼자 불 쬐는 중</button>
+  <div id="who" class="who"></div>
+  <span class="me">나: <b id="myname"></b><button id="rename" type="button">이름 바꾸기</button><button id="look-open2" type="button">모습 바꾸기</button></span>
+  <span class="me">방 코드: <b id="room-code">MAIN</b><button id="room-change" type="button">방 바꾸기</button><button id="room-copy" type="button">초대 주소 복사</button></span>
+</div>
+
+<div id="topright">
+  <button class="glass iconbtn" id="btn-places" type="button">📍 <b>길찾기</b></button>
+  <button class="glass iconbtn" id="btn-chat" type="button" title="대화">💬<span> 대화</span></button>
+  <button class="glass iconbtn" id="btn-sound" type="button" title="소리">🔊<span> 소리 켜짐</span></button>
+  <button class="glass iconbtn" id="btn-help" type="button" title="도움말">❔<span> 도움말</span></button>
+</div>
+
+<div id="places" class="glass"><span class="label">길 찾기</span></div>
+
+<div id="gestures" class="glass">
+  <button type="button" id="g-wave" title="손 흔들기">👋<span> 손 흔들기</span></button>
+  <button type="button" id="g-bow" title="인사하기">🙇<span> 인사하기</span></button>
+  <button type="button" id="g-dance" title="춤추기">💃<span> 춤추기</span></button>
+  <button type="button" id="g-emoji" title="이모지 보내기">😊<span> 이모지</span></button>
+</div>
+
+<div id="pick" class="glass chooser">
+  <p id="pick-title">골라 주세요</p>
+  <div class="picks" id="pick-list"></div>
+  <button type="button" id="pick-cancel" class="cancel">그만두기</button>
+</div>
+
+<div id="chat" class="glass">
+  <div id="chat-head"><span>💬 대화</span><button id="chat-close" type="button" aria-label="닫기">✕</button></div>
+  <div id="chat-list"></div>
+  <div id="chat-quick">
+    <button type="button">안녕하세요!</button>
+    <button type="button">불이 따뜻하네요 🔥</button>
+    <button type="button">오늘도 수고했어요</button>
+  </div>
+  <div id="chat-row">
+    <input id="chat-input" type="text" maxlength="40" placeholder="불가에서 한마디 (Enter)" autocomplete="off">
+    <button id="chat-send" type="button">보내기</button>
+  </div>
+</div>
+
+<div id="panel" class="glass"></div>
+<div id="toast" class="glass"></div>
+<div id="roomfull" class="glass"></div>
+
+<div id="zen">
+  <p id="zen-line"></p>
+  <div id="zen-foot"><button id="zen-stop" type="button">그만하기<span class="key"> (Esc)</span></button></div>
+</div>
+
+<div id="modal" class="overlay">
+  <div class="box glass">
+    <h4 id="modal-title"></h4>
+    <input id="modal-input" type="text" autocomplete="off">
+    <div class="row">
+      <span class="count" id="modal-count"></span>
+      <div class="btns">
+        <button class="cancel" id="modal-cancel" type="button">취소</button>
+        <button class="ok" id="modal-ok" type="button">남기기</button>
+      </div>
+    </div>
+    <p class="notice" id="modal-notice">이름 · 연락처 같은 개인정보는 적지 말아 주세요.</p>
+  </div>
+</div>
+
+<div id="look" class="overlay">
+  <div class="box glass">
+    <h4>내 모습 고르기</h4>
+    <div id="look-main">
+      <canvas id="look-preview" width="300" height="420"></canvas>
+      <div id="look-side">
+        <div id="look-presets"></div>
+        <div id="look-body"></div>
+      </div>
+    </div>
+    <button class="ok" id="look-done" type="button">완료</button>
+  </div>
+</div>
+
+<div id="help" class="overlay">
+  <div class="box glass">
+    <h2 style="margin-bottom:14px">이렇게 쉬어 가세요</h2>
+    <ul>
+      <li class="pc">🖱 <b>땅을 클릭</b>하면 그곳으로 걸어가요 · <b>W A S D</b> 로도</li>
+      <li class="pc">🔄 <b>드래그</b>로 둘러보기, <b>휠</b>로 확대·축소 · <b>Q E R F C</b> 시점</li>
+      <li class="touch">👆 <b>땅을 톡 누르면</b> 그곳으로 걸어가요</li>
+      <li class="touch">🔄 <b>한 손가락으로 끌면</b> 둘러보고, <b>두 손가락을 벌리거나 모으면</b> 확대·축소</li>
+      <li>🪑 모닥불 둘레의 <b>통나무 · 의자</b>를 누르면 앉아요</li>
+      <li>🔥 앉은 뒤 <b>불멍하기</b> — 버튼이 사라지고 불꽃만 남아요 (<span class="pc">Esc 또는 </span>'그만하기'로 끝)</li>
+      <li>🍡 마시멜로는 오래 두면 타요 · 🎸 기타는 내가 칠 때만 소리가 나요</li>
+      <li>📝 고민 태우기의 글은 <b>저장되지 않아요</b></li>
+      <li>🏮 호숫가에서 띄운 풍등은 하늘에 남아요 — 누르면 소원을 읽어요</li>
+      <li>🌲 길찾기 맨 아래 <b>쉼터로</b>를 누르면 낮의 쉼터로 돌아가요</li>
+    </ul>
+    <button class="close" id="help-close" type="button">닫기</button>
+  </div>
+</div>
+
+<div id="intro" class="overlay show">
+  <div class="box glass">
+    <p class="kicker">3D CAMPFIRE</p>
+    <h1 id="intro-title">불멍 캠프</h1>
+    <p class="sub" id="intro-sub"></p>
+    <ul>
+      <li>🔥 모닥불 앞에 앉아 멍하니 불 바라보기</li>
+      <li>🍡 마시멜로 굽고 🎸 기타 한 곡</li>
+      <li>📝 고민 한 줄 적어 불에 태우기</li>
+      <li>⛺ 텐트 안에서 쉬고 🌙 해먹에서 별똥별 보기</li>
+      <li>🏮 호숫가에서 소원 풍등 띄우기</li>
+    </ul>
+    <div class="code">
+      <label for="intro-name">닉네임</label>
+      <input id="intro-name" type="text" maxlength="12" placeholder="보일 이름" autocomplete="off">
+    </div>
+    <button class="look-btn" id="look-open" type="button">🎨 내 모습 고르기</button>
+    <div class="code">
+      <label for="intro-code">방 코드</label>
+      <input id="intro-code" type="text" maxlength="12" placeholder="비워 두면 공개 방" autocomplete="off">
+    </div>
+    <button class="enter" id="enter" type="button" disabled>불 피우는 중…</button>
+    <p class="mode" id="intro-mode"></p>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

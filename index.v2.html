@@ -22,11 +22,22 @@
 <meta name="twitter:description" content="연못가에 앉고, 별을 보고, 강아지와 놀 수 있는 3D 쉼터.">
 <meta name="twitter:image" content="https://shelter-gamma.vercel.app/og.png">
 <link rel="stylesheet" href="style.v2.css">
+<!-- 3D 엔진 · 함께 모드 파일을 페이지를 여는 즉시 미리 받아 둡니다 (쉼터 ↔ 불멍 이동을 조금이라도 빠르게) -->
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="preconnect" href="https://esm.sh" crossorigin>
+<link rel="modulepreload" href="https://unpkg.com/three@0.160.0/build/three.module.js" crossorigin>
 <script src="config.js"></script>
 </head>
 <body class="intro">
 <div id="app"></div>
 <div id="vignette"></div>
+<!-- 다른 공간으로 넘어갈 때 어두워지는 막 · 건너온 직후 소리 켜기 안내 -->
+<div id="fade"><div class="go-msg"><span class="go-text">🌲 쉼터로 가는 중</span><span class="go-dots"><i></i><i></i><i></i></span></div></div>
+<script>
+  // 건너오는 중이면 — 처음부터 완전히 어두운 막 + '가는 중' 표시 (장면을 만드는 몇 초 동안)
+  if (/[?&]go=1/.test(location.search)) { document.getElementById('fade').classList.add('on', 'instant'); document.documentElement.classList.add('arriving'); }
+</script>
+<button id="sound-tap" class="glass" type="button">🔊 화면을 누르면 소리가 켜져요</button>
 
 <div id="hud" class="glass">
   <span class="title" id="hud-title">쉼터</span>
@@ -127,13 +138,18 @@
   <div class="box glass">
     <h2 style="margin-bottom:14px">이렇게 둘러보세요</h2>
     <ul>
-      <li>🖱 <b>땅을 클릭(탭)</b>하면 그곳으로 걸어가요</li>
-      <li>⌨ <b>W A S D / 방향키</b>로도 움직일 수 있어요</li>
-      <li>🔄 <b>Q · E</b> 시점 좌우로 돌리기 · <b>R · F</b> 위아래 · <b>C</b> 캐릭터 뒤로</li>
-      <li>🔄 <b>드래그</b>로 시점 회전, <b>휠</b>로 확대·축소</li>
-      <li>📍 장소에 가까이 가면 아래에 할 수 있는 일이 나와요</li>
-      <li>📝 나무의 쪽지와 하늘의 별을 클릭하면 글을 읽을 수 있어요</li>
-      <li>🎹 음악실에서는 숫자키 1~8로 건반을 칠 수 있어요</li>
+      <li class="pc">🖱 <b>땅을 클릭</b>하면 그곳으로 걸어가요</li>
+      <li class="pc">⌨ <b>W A S D / 방향키</b>로도 움직일 수 있어요</li>
+      <li class="pc">🔄 <b>Q · E</b> 시점 좌우로 돌리기 · <b>R · F</b> 위아래 · <b>C</b> 캐릭터 뒤로</li>
+      <li class="pc">🔄 <b>드래그</b>로 시점 회전, <b>휠</b>로 확대·축소</li>
+      <li class="touch">👆 <b>땅을 톡 누르면</b> 그곳으로 걸어가요</li>
+      <li class="touch">🔄 <b>한 손가락으로 끌면</b> 둘러보고, <b>두 손가락을 벌리거나 모으면</b> 확대·축소</li>
+      <li>📍 장소에 가까이 가면 아래에 할 수 있는 일이 나와요 · 위쪽 <b>길찾기</b>로 바로 가요</li>
+      <li class="pc">📝 나무의 쪽지와 하늘의 별을 클릭하면 글을 읽을 수 있어요</li>
+      <li class="touch">📝 나무의 쪽지와 하늘의 별을 누르면 글을 읽을 수 있어요</li>
+      <li class="pc">🎹 음악실에서는 숫자키 1~8로 건반을 칠 수 있어요</li>
+      <li class="touch">🎹 음악실에서는 아래 건반을 눌러 칠 수 있어요</li>
+      <li>🔥 길찾기 맨 아래 <b>불멍 캠프</b>로 밤의 모닥불 공간에 갈 수 있어요</li>
     </ul>
     <button class="close" id="help-close" type="button">닫기</button>
   </div>

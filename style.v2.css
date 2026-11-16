@@ -351,3 +351,45 @@ body.intro > :not(#app):not(#vignette):not(#intro):not(#look):not(script) { visi
 
 /* 입장 · 퇴장 알림 줄 */
 #chat-list .line.sys { opacity: .65; font-size: 12px; text-align: center; padding: 2px 0; }
+
+
+/* ---- 쉼터 ↔ 불멍 오가기 ---- */
+/* 넘어갈 때 화면이 천천히 어두워지는 막 (건너온 직후에는 덮인 채로 시작해 서서히 걷힘) */
+#fade { position: fixed; inset: 0; background: #05060c; opacity: 0; pointer-events: none; z-index: 60; transition: opacity .6s ease; }
+#fade.on { opacity: 1; pointer-events: auto; }
+html.arriving #intro { visibility: hidden; }          /* 건너오는 중에는 시작 화면을 보이지 않게 */
+/* 길찾기의 '다른 공간' 버튼 — 장소 버튼과 구분되게 */
+#places button.portal { margin-top: 4px; background: rgba(255, 150, 70, .16); border: 1px solid rgba(255, 180, 110, .35); }
+#places button.portal:hover { background: rgba(255, 150, 70, .3); }
+#places button.portal .cnt { font-size: 11px; opacity: .75; }
+/* 소리 켜기 안내 — 위쪽 가운데, 누르면 사라짐 */
+#sound-tap { position: fixed; top: 72px; left: 50%; transform: translate(-50%, -8px); z-index: 21; padding: 10px 18px; border-radius: 999px;
+  color: #fff; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s; }
+#sound-tap.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; animation: tapPulse 2s ease-in-out infinite; }
+@keyframes tapPulse { 50% { box-shadow: 0 0 0 6px rgba(255, 200, 140, .18); } }
+@media (max-width: 760px) { #sound-tap { top: 150px; font-size: 13px; } }
+
+/* 이동 중 표시 — 어두운 막 가운데 '○○로 가는 중 · · ·' */
+#fade.instant { transition: none; }
+#fade .go-msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 10px;
+  color: #ffe2b8; font-size: 18px; font-weight: 700; letter-spacing: .3px; white-space: nowrap; opacity: 0; transition: opacity .4s .15s; }
+#fade.on .go-msg { opacity: 1; }
+#fade .go-dots { display: inline-flex; gap: 5px; }
+#fade .go-dots i { width: 6px; height: 6px; border-radius: 50%; background: #ffb46a; animation: goDot 1.2s ease-in-out infinite; }
+#fade .go-dots i:nth-child(2) { animation-delay: .2s; }
+#fade .go-dots i:nth-child(3) { animation-delay: .4s; }
+@keyframes goDot { 0%, 80%, 100% { opacity: .2; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-4px); } }
+
+/* 컴퓨터용 · 터치용 안내를 나눠 보여 줍니다 (휴대폰에서 키보드 이야기가 나오지 않게) */
+@media (pointer: coarse) { .pc { display: none !important; } }
+@media (pointer: fine) { .touch { display: none !important; } }
+
+/* 시작 화면이 떠 있는 동안 다른 요소를 숨기는 규칙에서 — 이동 중 막 · 소리 안내는 빼 둡니다
+   (예전엔 건너온 직후 "쉼터로 가는 중" 이 1초만 보이고 사라졌음) */
+body.intro > #fade, body.intro > #sound-tap { visibility: visible !important; }
+
+/* 휴대폰 — 장소 버튼이 많으면 옆으로 잘리지 않게 두 줄로 (별빛 운동장 '소원 하나 읽기'가 잘렸음) */
+@media (max-width: 760px) {
+  #panel .actions { flex-wrap: wrap !important; overflow-x: visible !important; gap: 5px !important; }
+  #panel .actions button { padding: 7px 9px !important; font-size: 12px !important; }
+}
