@@ -7,9 +7,10 @@ _비교샷/
 캡쳐/
 
 # 옛 버전(v1) — 이게 올라가면 벌셀이 / 주소에서 v1 을 먼저 보여 줍니다
-index.html
-app.js
-style.css
+#   앞에 / 를 붙여 '맨 위 폴더의 파일만' 뺍니다. (없으면 불멍/ 폴더의 같은 이름 파일까지 빠져 /bulmeong/ 이 404 였음)
+/index.html
+/app.js
+/style.css
 
 # 발표 자료
 *.pptx
