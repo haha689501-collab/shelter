@@ -5478,6 +5478,12 @@
     // 처음 한 번만 — 시점 돌리는 방법 안내 (다시 보려면 ❔ 도움말)
     // 휴대폰은 안내 카드(길찾기 · 톡 · 끌기), 컴퓨터는 예전처럼 한 줄 안내
     //   (쉼터 ↔ 불멍으로 건너온 경우엔 이미 길찾기를 쓴 것이라 띄우지 않음)
+    // 휴대폰은 들어올 때마다 길찾기 버튼이 반짝 — 이번 방문에서 한 번 누르면 멈춤 (안내 카드는 처음 몇 번만)
+    if (TOUCH && params.get('go') !== '1') {
+      const pb = $('#btn-places');
+      pb.classList.add('coach-pulse');
+      pb.addEventListener('click', () => pb.classList.remove('coach-pulse'), { once: true });
+    }
     if (TOUCH) { if (params.get('go') !== '1') showCoach([
           '📍 위쪽 <b>길찾기</b>를 누르면 가고 싶은 곳으로 <b>바로 이동</b>해요',
           '👆 화면을 <b>터치</b>하면 그곳으로 이동할 수 있어요',
