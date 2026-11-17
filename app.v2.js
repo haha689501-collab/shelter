@@ -5285,14 +5285,61 @@
   $('#btn-help').onclick = () => $('#help').classList.add('show');
   $('#help-close').onclick = () => $('#help').classList.remove('show');
   $('#breath-close').onclick = () => stopBreath();
+  // 소리 깨우기 — 휴대폰은 다른 앱(카톡 등)에 다녀오면 소리 장치가 멈춥니다.
+  //   아이폰은 상태가 'suspended' 가 아니라 'interrupted' 라서, 예전 코드(suspended 일 때만 resume)로는 다시 켜지지 않았고
+  //   🔊 버튼을 누르면 오히려 '꺼짐'으로 바뀌어 새로고침밖에 방법이 없었습니다.
+  const soundAsleep = () => !!actx && actx.state !== 'running';
+  function wakeAudio() {
+    if (!actx || muted) return;
+    if (actx.state !== 'running') actx.resume().then(() => { if (actx.state === 'running') $('#sound-tap').classList.remove('show'); }).catch(() => {});
+  }
+  // 화면을 만지거나 키를 누르면 곧바로 깨움 (휴대폰은 '만지는 순간'에만 다시 켤 수 있음)
+  for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, wakeAudio, { capture: true, passive: true });
+  // 다른 앱으로 나가면 스스로 쉬고, 돌아오면 깨움 — 그래도 멈춰 있으면 '눌러서 소리 켜기' 안내
+  document.addEventListener('visibilitychange', () => {
+    if (!actx) return;
+    if (document.hidden) { if (actx.state === 'running') actx.suspend().catch(() => {}); return; }
+    wakeAudio();
+    setTimeout(() => { if (!document.hidden && soundAsleep() && !muted) $('#sound-tap').classList.add('show'); }, 700);
+  });
+  window.addEventListener('pageshow', () => { wakeAudio(); });
+  $('#sound-tap').addEventListener('click', () => { wakeAudio(); $('#sound-tap').classList.remove('show'); });
   $('#btn-sound').onclick = () => {
     ensureAudio();
-    if (actx && actx.state === 'suspended') actx.resume();
+    // 소리가 멈춰 있으면(다른 앱에 다녀온 뒤 등) 이 버튼은 '다시 켜기' — 끄지 않습니다
+    if (soundAsleep() && !muted) {
+      actx.resume().catch(() => {});
+      startAmbient();
+      $('#sound-tap').classList.remove('show');
+      toast('🔊 소리를 다시 켰어요', 1500);
+      return;
+    }
+    if (actx && actx.state !== 'running') actx.resume().catch(() => {});
     muted = !muted;
     if (master) master.gain.setTargetAtTime(muted ? 0 : 0.8, actx.currentTime, 0.2);
     if (!muted) startAmbient();
     $('#btn-sound').innerHTML = muted ? '🔇<span> 소리 꺼짐</span>' : '🔊<span> 소리 켜짐</span>';
   };
+  // 휴대폰 첫 안내 카드 — "어떻게 움직여야 하는지 모르겠다"는 분들을 위해. 길찾기 버튼도 반짝이게 합니다.
+  //   '알겠어요'를 누르거나 길찾기를 한 번 쓰면 다시 안 띄웁니다 (안 눌러도 3번까지만)
+  function showCoach(lines) {
+    const K = 'shelter:coach';
+    const n = Number(localStorage.getItem(K) || 0);
+    if (n >= 3) return;
+    localStorage.setItem(K, String(n + 1));
+    const card = el('div', { id: 'coach', className: 'glass' }, [
+      el('h4', { textContent: '이렇게 움직여요' }),
+      ...lines.map((t) => { const p = el('p'); p.innerHTML = t; return p; }),
+      el('button', { type: 'button', textContent: '알겠어요' }),
+    ]);
+    document.body.append(card);
+    const btn = $('#btn-places');
+    btn.classList.add('coach-pulse');
+    const done = () => { localStorage.setItem(K, '9'); card.classList.remove('show'); btn.classList.remove('coach-pulse'); setTimeout(() => card.remove(), 400); };
+    card.querySelector('button').onclick = done;
+    btn.addEventListener('click', done, { once: true });
+    setTimeout(() => card.classList.add('show'), 700);
+  }
   $('#myname').textContent = me.name;
   $('#rename').onclick = () => {
     me.name = randomName();
@@ -5388,7 +5435,13 @@
     document.body.classList.remove('intro');
     introOn = false;
     // 처음 한 번만 — 시점 돌리는 방법 안내 (다시 보려면 ❔ 도움말)
-    if (!localStorage.getItem('shelter:viewHint')) {
+    // 휴대폰은 안내 카드(길찾기 · 톡 · 끌기), 컴퓨터는 예전처럼 한 줄 안내
+    //   (쉼터 ↔ 불멍으로 건너온 경우엔 이미 길찾기를 쓴 것이라 띄우지 않음)
+    if (TOUCH) { if (params.get('go') !== '1') showCoach([
+          '📍 위쪽 <b>길찾기</b>를 누르면 가고 싶은 곳으로 <b>바로 이동</b>해요',
+          '👆 화면을 <b>터치</b>하면 그곳으로 이동할 수 있어요',
+        ]); }
+    else if (!localStorage.getItem('shelter:viewHint')) {
       localStorage.setItem('shelter:viewHint', '1');
       const touch = window.matchMedia('(pointer: coarse)').matches;
       setTimeout(() => toast(touch
