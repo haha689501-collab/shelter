@@ -2441,7 +2441,7 @@
     g.position.set(0, -0.26, 0.02);
     g.rotation.x = -0.72;                  // 팔 끝에서 앞 위로 길게
     u.arms[1].elbow.add(g);
-    g.userData = { mm, flame };
+    g.userData = { mm, flame, mallow };
     u.stickObj2 = g;
     u.roasting = true;
     u.roastLv = u.roastLv || 0;
@@ -2453,14 +2453,39 @@
     u.roasting = false;
     u.roastLv = 0;
   }
+  const MALLOW_GONE = 1.9;     // 불이 붙고(1.12) 약 7초 더 두면 다 타서 재가 됨
+  // 다 타 버림 — 재 한 덩이가 툭 떨어지고, 꼬챙이는 내려놓음 (먹은 수에는 안 셈)
+  function burnAway(av, mine) {
+    const s = av.userData.stickObj2;
+    if (s) {
+      const from = new THREE.Vector3();
+      s.userData.mallow.getWorldPosition(from);
+      const ash = mesh(new THREE.DodecahedronGeometry(0.035, 0), new THREE.MeshStandardMaterial({ color: '#1c1714', emissive: '#ff4a10', emissiveIntensity: 0.5, roughness: 1 }), from.x, from.y, from.z);
+      scene.add(ash);
+      projectiles.push({ obj: ash, from, to: new THREE.Vector3(from.x, standY(from.x, from.z) + 0.03, from.z), t: 0, dur: 0.55, h: 0.04 });
+    }
+    floatEmoji(mine ? '😭' : '💨', av.position.clone().add(new THREE.Vector3(0, 2.1, 0)), 0.7, 1.4);
+    takeStick(av);
+    if (mine) {
+      toast('😭 마시멜로가 다 타 버렸어요… 새로 구워 볼까요?', 3000);
+      store.send('act', { id: me.id, type: 'burnt' });
+      netDirty = true;
+      showPanel(currentPlace, true);
+    }
+  }
   function tintMallow(av, t) {
     const u = av.userData, s = u.stickObj2;
     if (!s) return;
     mallowColor(u.roastLv, s.userData.mm.color);
     const burning = u.roastLv > 1.12;
-    s.userData.flame.material.opacity = burning ? 0.7 + Math.sin(t * 17) * 0.2 : 0;
+    // 불이 붙은 뒤 — 불길이 점점 커지고 마시멜로는 까맣게 쪼그라듦 (MALLOW_GONE 에서 재가 되어 떨어짐)
+    const bk = clamp((u.roastLv - 1.12) / (MALLOW_GONE - 1.12), 0, 1);
+    s.userData.flame.material.opacity = burning ? (0.7 + Math.sin(t * 17) * 0.2) * (0.8 + 0.4 * bk) : 0;
+    s.userData.flame.scale.setScalar(0.45 + bk * 0.95 + Math.sin(t * 13) * 0.08 * bk);   // 점점 활활
+    s.userData.mallow.scale.setScalar(1 - 0.55 * bk);
     s.userData.mm.emissive = s.userData.mm.emissive || new THREE.Color();
     s.userData.mm.emissive.set(burning ? '#ff5a10' : '#000000');
+    s.userData.mm.emissiveIntensity = burning ? 0.6 + 0.4 * Math.sin(t * 9) * bk : 1;
   }
 
   // ------------------------------------------------------------------
@@ -3753,7 +3778,7 @@
       if (m.g && u.pose === 'sit') startGuitar(o.av, 0.08); else if (guitarists.has(o.av)) stopGuitar(o.av);
       // 불꽃막대 — 늦게 들어온 사람에게도 남은 시간만큼 보임
       if (m.sp > 0 && u.pose !== 'lie') { if (!u.sparkObj) giveSparkler(o.av, Number(m.sp)); u.sparkLeft = clamp(Number(m.sp), 0, SPARKLER_SECS); } else if (u.sparkObj) takeSparkler(o.av);
-      if (m.rs && u.pose === 'sit') { giveStick(o.av); u.roastLv = clamp(Number(m.rl) || 0, 0, 1.4); } else if (u.roasting) takeStick(o.av);
+      if (m.rs && u.pose === 'sit') { giveStick(o.av); u.roastLv = clamp(Number(m.rl) || 0, 0, MALLOW_GONE); } else if (u.roasting) takeStick(o.av);
     },
     onAct(a) {
       if (!a || a.id === me.id) return;
@@ -3763,6 +3788,7 @@
       if (a.type === 'wood' && o) addWood(o.av, false);
       if (a.type === 'burn' && o) throwBurn(o.av, false);
       if (a.type === 'eat' && o) eatMallow(o.av, false);
+      if (a.type === 'burnt' && o) burnAway(o.av, false);
       if (a.type === 'lantern' && Number.isInteger(a.i)) toggleLantern(a.i, !!a.on, false);
       if (a.type === 'skip' && o && Number.isInteger(a.hops)) skipStone(o.av, false, clamp(a.hops, 1, 9), Number(a.ry) || 0);
       if (a.type === 'counter' && counters[a.name] !== undefined) applyCounter(a.name, Number(a.value) || 0);
@@ -4530,6 +4556,7 @@
       const step = Math.round(player.userData.roastLv * 10) / 10;
       if (step !== lastRl) { lastRl = step; netDirty = true; }
       if (player.userData.roastLv > 1.12 && !player.userData.burnWarned) { player.userData.burnWarned = true; toast('🔥 앗, 마시멜로에 불이 붙었어요! 얼른 "먹기"!', 2600); }
+      if (player.userData.roastLv >= MALLOW_GONE) burnAway(player, true);   // 그래도 안 먹으면 다 타 버림
     } else player.userData.burnWarned = false;
     for (const o of others.values()) if (o.av.userData.roasting) tintMallow(o.av, t);
     updateSparklers(dt, t);
