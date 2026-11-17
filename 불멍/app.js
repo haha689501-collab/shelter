@@ -2270,6 +2270,8 @@
         er = -1.15 - sip * 0.95;                  // 팔꿈치를 굽혀 컵을 입 높이로
       }
       // 마시멜로 굽기 — 꼬챙이 든 팔을 불 쪽으로 길게 뻗습니다
+      // 불꽃막대 — 앞으로 든 팔을 천천히 흔들어 불꽃으로 그림을 그리듯
+      if (u.sparkler && i === 1) { rx = -1.15 + Math.sin(u.t * 2.1) * 0.28; rz = sgn * (0.5 + Math.sin(u.t * 1.6) * 0.22); er = -0.3 + Math.sin(u.t * 2.6) * 0.1; }   // 몸 바깥쪽으로 — 얼굴을 가리지 않게
       if (u.roasting && i === 1 && u.pose === 'sit') { rx = -1.0 + Math.sin(u.t * 0.7) * 0.03; rz = sgn * 0.08; er = -0.12; }
       // 기타 — 한 손은 넥을 잡고, 한 손은 줄 위에서 위아래로 긁습니다
       if (u.guitar && u.pose === 'sit') {
@@ -2459,6 +2461,145 @@
     s.userData.flame.material.opacity = burning ? 0.7 + Math.sin(t * 17) * 0.2 : 0;
     s.userData.mm.emissive = s.userData.mm.emissive || new THREE.Color();
     s.userData.mm.emissive.set(burning ? '#ff5a10' : '#000000');
+  }
+
+  // ------------------------------------------------------------------
+  // 불꽃막대(스파클러) — 모닥불에서 불을 붙여 약 25초. 막대 끝에서 반짝이는 불꽃이 사방으로 튐
+  // ------------------------------------------------------------------
+  const SPARKLER_SECS = 25;
+  const sparkWire = new THREE.CylinderGeometry(0.006, 0.006, 0.62, 5);
+  sparkWire.userData.shared = true;
+  function giveSparkler(av, left = SPARKLER_SECS) {
+    const u = av.userData;
+    if (u.sparkObj) return;
+    if (u.roasting) takeStick(av);                    // 손이 하나라 꼬챙이 · 기타와는 동시에 못 듦
+    if (guitarists.has(av)) stopGuitar(av);
+    const g = new THREE.Group();
+    const wire = mesh(sparkWire, mat('#5e5a58', { metalness: 0.6, roughness: 0.4 }), 0, -0.31, 0);
+    g.add(wire);
+    const coat = mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.36, 8), mat('#3b3634', { roughness: 1 }), 0, -0.45, 0);   // 타들어 가는 부분
+    g.add(coat);
+    const tip = new THREE.Object3D();
+    tip.position.y = -0.62;
+    g.add(tip);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#fff8e8', transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false }));
+    glow.scale.setScalar(0.2);
+    tip.add(glow);
+    g.position.set(0, -0.26, 0.04);
+    g.rotation.x = -0.9;                             // 손에서 앞 위로
+    u.arms[1].elbow.add(g);
+    g.userData = { tip, glow, coat };
+    u.sparkObj = g;
+    u.sparkler = true;
+    u.sparkLeft = left;
+  }
+  function takeSparkler(av) {
+    const u = av.userData;
+    if (u.sparkObj) { u.arms[1].elbow.remove(u.sparkObj); disposeObj(u.sparkObj); }
+    u.sparkObj = null;
+    u.sparkler = false;
+    u.sparkLeft = 0;
+  }
+  // 튀는 불꽃 — 점이 아니라 '가는 빛줄기'(선분). 아주 빠르게 사방으로 뻗고, 끝에서 2~4갈래로 다시 갈라짐(별꽃 모양).
+  //   (예전엔 둥근 점이 떨어지듯 날아서 "물조리개 물 튀듯" 보였음)
+  const SPARKS = LOW ? 300 : 600;
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPARKS * 6).fill(-50), 3));
+  sparkGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(SPARKS * 6), 3));
+  const sparkPts = new THREE.LineSegments(sparkGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false }));
+  sparkPts.frustumCulled = false;
+  sparkPts.renderOrder = 7;
+  scene.add(sparkPts);
+  const sparkData = Array.from({ length: SPARKS }, () => ({ x: 0, y: -50, z: 0, vx: 0, vy: 0, vz: 0, life: 0, max: 1, gen: 0, split: false }));
+  let sparkNext = 0;
+  function emitSpark(x, y, z, dx, dy, dz, speed, life, gen) {
+    const e = sparkData[sparkNext]; sparkNext = (sparkNext + 1) % SPARKS;
+    e.x = x; e.y = y; e.z = z;
+    e.vx = dx * speed; e.vy = dy * speed; e.vz = dz * speed;
+    e.max = e.life = life; e.gen = gen; e.split = false;
+  }
+  const randDir = () => { const th = Math.random() * 6.28, y = Math.random() * 2 - 1, r = Math.sqrt(1 - y * y); return [r * Math.cos(th), y, r * Math.sin(th)]; };
+  const sparkLight = new THREE.PointLight('#ffd9a0', 0, 5, 2);   // 내 불꽃막대만 주변을 비춤 (빛은 하나만)
+  scene.add(sparkLight);
+  const _tipW = new THREE.Vector3();
+  function updateSparklers(dt, t) {
+    const holders = [player, ...[...others.values()].map((o) => o.av)];
+    for (const av of holders) {
+      const u = av.userData;
+      if (!u.sparkObj) continue;
+      if (av !== player) u.sparkLeft = Math.max(0.6, (u.sparkLeft || SPARKLER_SECS) - dt);   // 다른 사람 것 — 끝은 상대가 알려 줌
+      if (av === player) {
+        u.sparkLeft -= dt;
+        if (u.sparkLeft <= 0) { takeSparkler(player); toast('🎇 불꽃막대가 다 탔어요', 1800); netDirty = true; showPanel(currentPlace, true); continue; }
+      }
+      const left = u.sparkLeft === undefined ? 1 : clamp(u.sparkLeft / SPARKLER_SECS, 0, 1);
+      const so = u.sparkObj.userData;
+      // 타들어 갈수록 끝이 손 쪽으로 (코팅이 짧아짐)
+      const len = 0.36 * left + 0.02;
+      so.coat.scale.y = len / 0.36;
+      so.coat.position.y = -0.27 - len / 2;
+      so.tip.position.y = -0.27 - len;
+      const fade = left < 0.08 ? left / 0.08 : 1;
+      so.glow.material.opacity = (0.8 + Math.sin(t * 37) * 0.15) * fade;
+      so.glow.scale.setScalar(0.26 + Math.sin(t * 23) * 0.05);   // 끝은 작고 밝게 (크면 빛 공처럼 보임)
+      so.tip.getWorldPosition(_tipW);
+      if (!av.visible) continue;
+      // 한 프레임에 몇 줄기씩 사방으로 — 빠르고 짧게 (초속 3~6m, 0.06~0.18초)
+      const n = Math.round((av === player ? 12 : 8) * fade * (dt * 60));
+      for (let k = 0; k < n; k++) {
+        const [dx, dy, dz] = randDir();
+        emitSpark(_tipW.x, _tipW.y, _tipW.z, dx, dy, dz, 3 + Math.random() * 3, 0.06 + Math.random() * 0.12, 0);
+      }
+      if (av === player) {
+        sparkLight.position.copy(_tipW);
+        sparkLight.intensity = (2.6 + Math.sin(t * 31) * 0.6) * fade;
+      }
+    }
+    if (!player.userData.sparkObj) sparkLight.intensity = Math.max(0, sparkLight.intensity - dt * 10);
+    const pa = sparkGeo.attributes.position, ca = sparkGeo.attributes.color;
+    for (let i = 0; i < SPARKS; i++) {
+      const e = sparkData[i];
+      if (e.life > 0) {
+        e.life -= dt;
+        e.vy -= 1.2 * dt;                                       // 거의 떨어지지 않음
+        e.x += e.vx * dt; e.y += e.vy * dt; e.z += e.vz * dt;
+        // 반쯤 날아가면 끝에서 2~4갈래로 갈라짐 (갈라진 가지는 한 번 더 갈라지지 않음)
+        if (e.gen === 0 && !e.split && e.life < e.max * 0.45 && Math.random() < 0.8) {
+          e.split = true;
+          const m = 2 + Math.floor(Math.random() * 3), sp0 = Math.hypot(e.vx, e.vy, e.vz) || 1;
+          for (let k = 0; k < m; k++) {
+            const [rx, ry, rz] = randDir();
+            const dx = e.vx / sp0 + rx * 0.9, dy = e.vy / sp0 + ry * 0.9, dz = e.vz / sp0 + rz * 0.9, dl = Math.hypot(dx, dy, dz) || 1;
+            emitSpark(e.x, e.y, e.z, dx / dl, dy / dl, dz / dl, 1.6 + Math.random() * 1.8, 0.04 + Math.random() * 0.07, 1);
+          }
+        }
+      }
+      const j = i * 6;
+      if (e.life <= 0) { pa.array[j + 1] = pa.array[j + 4] = -50; continue; }
+      // 빛줄기 길이 = 속도 × 0.03초 (움직임이 남긴 빛 자국)
+      const tl = 0.03;
+      pa.array[j] = e.x; pa.array[j + 1] = e.y; pa.array[j + 2] = e.z;
+      pa.array[j + 3] = e.x - e.vx * tl; pa.array[j + 4] = e.y - e.vy * tl; pa.array[j + 5] = e.z - e.vz * tl;
+      const a = Math.min(1, (e.life / e.max) * 1.6) * (e.gen ? 0.8 : 1);
+      ca.array[j] = 1.6 * a; ca.array[j + 1] = 1.45 * a; ca.array[j + 2] = 1.05 * a;          // 머리 — 하얗게
+      ca.array[j + 3] = 0.9 * a * 0.25; ca.array[j + 4] = 0.55 * a * 0.25; ca.array[j + 5] = 0.15 * a * 0.25;   // 꼬리 — 금빛으로 사라짐
+    }
+    pa.needsUpdate = ca.needsUpdate = true;
+  }
+  function startSparkler() {
+    if (player.userData.sparkObj) { takeSparkler(player); netDirty = true; showPanel(currentPlace, true); return; }
+    if (Math.hypot(player.position.x, player.position.z) > 7) { toast('모닥불 가까이 가서 불을 붙여요', 1600); return; }
+    if (player.userData.pose === 'stand') faceTo(player, fire.group);
+    giveSparkler(player);
+    sparkBurst(12);
+    // 시점 — 내 앞쪽 비스듬히 · 가까이 (뒤에서 보면 불꽃막대가 몸에 가려 안 보였음)
+    camYaw = player.rotation.y - 0.95;   // 불꽃막대를 든 쪽에서
+    camPitch = 0.22;
+    camDist = 4.2;
+    arriveYaw = null;
+    toast('🎇 불꽃막대에 불을 붙였어요 · 들고 걸어 다녀도 돼요', 2800);
+    netDirty = true;
+    showPanel(currentPlace, true);
   }
 
   const carryLogGeo = new THREE.CylinderGeometry(0.08, 0.09, 0.7, 8);
@@ -2737,8 +2878,7 @@
     if (crackleT <= 0) { if (near > 0.03) crackle(near * (0.7 + 0.3 * lv) * (zen.on ? 1.7 : atFire ? 1.5 : 1.2)); crackleT = (atFire ? 0.16 + Math.random() * 0.55 : 0.25 + Math.random() * 0.7) / Math.max(0.85, lv); }   // 넉넉한 간격
     chirpT -= dt;
     if (chirpT <= 0) { chirp(); chirpT = 0.35 + Math.random() * 1.15; }    // 불멍 중에도 귀뚜라미는 들립니다
-    hootT -= dt;
-    if (hootT <= 0) { if (!zen.on) hoot(); hootT = 30 + Math.random() * 40; }
+    // (부엉이 소리는 뺐습니다 — 맑은 음 두 개가 '입장 알림음'처럼 들렸음)
   }
 
   // 기타 — 줄을 튕기는 소리(카플러스-스트롱)를 직접 계산합니다. 다장조 C · G · Am · F
@@ -2953,6 +3093,7 @@
       if (u.roasting) { takeStick(player); }
       if (guitarists.has(player)) stopGuitar(player);
     }
+    if (pose === 'lie' && u.sparkObj) takeSparkler(player);   // 누우면 불꽃막대는 내려놓음
     u.pose = pose;
     document.body.classList.toggle('lying', pose === 'lie');   // 누워 있을 땐 아래 안내 상자를 작게 (시야를 가리지 않게)
     camMode = pose === 'lie' ? 'lie' : zen.on ? 'zen' : 'follow';
@@ -3139,6 +3280,7 @@
   function startRoast() {
     if (!mySeat || mySeat.kind === 'deck') { toast('모닥불 자리에 앉아서 구워요', 1600); return; }
     if (guitarists.has(player)) stopGuitar(player);       // 기타와 꼬챙이는 한 번에 하나만
+    if (player.userData.sparkObj) takeSparkler(player);
     giveStick(player);
     player.userData.roastLv = 0;
     toast('🍡 꼬챙이를 불 쪽으로… 노릇해지면 "먹기"를 눌러요', 3000);
@@ -3161,6 +3303,7 @@
     else {
       if (!mySeat || mySeat.kind === 'deck') { toast('모닥불 자리에 앉아서 쳐요', 1600); return; }
       if (player.userData.roasting) takeStick(player);
+      if (player.userData.sparkObj) takeSparkler(player);
       startGuitar(player, 0.065);
       toast('🎸 C · G · Am · F — 같은 방 사람들에게도 들려요', 2600);
     }
@@ -3318,12 +3461,13 @@
           ['🔥 불멍하기', startZen],
           u.roasting ? ['😋 먹기', () => eatMallow()] : ['🍡 마시멜로 굽기', startRoast],
           [guitarists.has(player) ? '🎸 그만 치기' : '🎸 기타 치기', toggleMyGuitar],
+          [u.sparkObj ? '🎇 불꽃막대 끄기' : '🎇 불꽃막대', startSparkler],
           ['🪵 장작 넣기', () => addWood()],
           ['📝 고민 태우기', burnWorry],
           ['🙋 일어나기', standUp],
         ];
       }
-      return [['🪑 빈자리에 앉기', sitFire], ['🪵 장작 넣기', () => addWood()], ['📝 고민 태우기', burnWorry]];
+      return [['🪑 빈자리에 앉기', sitFire], [u.sparkObj ? '🎇 불꽃막대 끄기' : '🎇 불꽃막대', startSparkler], ['🪵 장작 넣기', () => addWood()], ['📝 고민 태우기', burnWorry]];
     }
     if (p.type === 'tent') {
       if (pose === 'lie') return [['🙋 일어나기', standUp]];
@@ -3607,6 +3751,8 @@
       o.lift = clamp(Number(m.lift) || 0, -0.5, 1.2);
       // 기타 · 마시멜로 — 늦게 들어온 사람도 지금 상태 그대로 보이게 움직임에 실어 보냅니다
       if (m.g && u.pose === 'sit') startGuitar(o.av, 0.08); else if (guitarists.has(o.av)) stopGuitar(o.av);
+      // 불꽃막대 — 늦게 들어온 사람에게도 남은 시간만큼 보임
+      if (m.sp > 0 && u.pose !== 'lie') { if (!u.sparkObj) giveSparkler(o.av, Number(m.sp)); u.sparkLeft = clamp(Number(m.sp), 0, SPARKLER_SECS); } else if (u.sparkObj) takeSparkler(o.av);
       if (m.rs && u.pose === 'sit') { giveStick(o.av); u.roastLv = clamp(Number(m.rl) || 0, 0, 1.4); } else if (u.roasting) takeStick(o.av);
     },
     onAct(a) {
@@ -3824,30 +3970,64 @@
   $('#btn-help').onclick = () => $('#help').classList.add('show');
   $('#help-close').onclick = () => $('#help').classList.remove('show');
   $('#zen-stop').onclick = () => stopZen();
+  // 소리 장치를 통째로 새로 — 다른 앱에 다녀와 소리가 안 날 때. 모닥불 · 풀벌레 · 호수 소리를 다시 켭니다.
+  function rebuildAudio() {
+    const old = actx;
+    for (const k of Object.keys(amb)) delete amb[k];
+    ksCache.clear();
+    actx = null; master = null; noiseBuf = null;
+    try { if (old) old.close(); } catch (e) { /* 이미 닫힘 */ }
+    ensureAudio();
+    if (actx) startAmbient();
+  }
   // 소리 깨우기 — 휴대폰은 다른 앱(카톡 등)에 다녀오면 소리 장치가 멈춥니다.
   //   아이폰은 상태가 'suspended' 가 아니라 'interrupted' 라서, 예전 코드(suspended 일 때만 resume)로는 다시 켜지지 않았고
   //   🔊 버튼을 누르면 오히려 '꺼짐'으로 바뀌어 새로고침밖에 방법이 없었습니다.
+  //   ※ 아이폰은 카톡 등에 다녀오면 소리 권한을 '몇 초 뒤에야' 돌려줍니다. 예전엔 다시 켜기를 한 번만 시도하고 끝나서
+  //     우연히 다시 켜질 때까지 오래 걸렸음 → 돌아오면 0.25초마다 계속 다시 켜기를 시도 (글자 안내는 없음).
+  // 아이폰에 '음악처럼 재생하는 소리'라고 알림 — 다른 앱 전환 · 무음 스위치에 덜 끊김 (사파리 16.4+)
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* 없는 브라우저 */ }
+  let wasAway = false, retryTimer = null;
   const soundAsleep = () => !!actx && actx.state !== 'running';
   function wakeAudio() {
     if (!actx || muted) return;
-    if (actx.state !== 'running') actx.resume().then(() => { if (actx.state === 'running') $('#sound-tap').classList.remove('show'); }).catch(() => {});
+    if (actx.state !== 'running') actx.resume().then(() => { if (actx && actx.state === 'running') $('#sound-tap').classList.remove('show'); }).catch(() => {});
   }
-  // 화면을 만지거나 키를 누르면 곧바로 깨움 (휴대폰은 '만지는 순간'에만 다시 켤 수 있음)
-  for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, wakeAudio, { capture: true, passive: true });
-  // 다른 앱으로 나가면 스스로 쉬고, 돌아오면 깨움 — 그래도 멈춰 있으면 '눌러서 소리 켜기' 안내
+  // 돌아온 뒤 소리가 날 때까지 0.25초마다 다시 켜기 (최대 30초) — 켜지는 순간 표시를 걷음
+  function retryWake() {
+    clearInterval(retryTimer);
+    const t0 = performance.now();
+    retryTimer = setInterval(() => {
+      if (!actx || muted || document.hidden) { clearInterval(retryTimer); return; }
+      if (actx.state === 'running') { clearInterval(retryTimer); $('#sound-tap').classList.remove('show'); wasAway = false; return; }
+      actx.resume().catch(() => {});
+      if (performance.now() - t0 > 30000) clearInterval(retryTimer);
+    }, 250);
+  }
+  // 화면을 만지거나 키를 누르면 그 순간에도 바로 시도 (휴대폰은 '손을 떼는 순간(touchend)'이 가장 확실)
+  for (const ev of ['touchend', 'click', 'keydown']) window.addEventListener(ev, wakeAudio, { capture: true, passive: true });
+  // 다른 앱으로 나가면 스스로 쉬고, 돌아오면 계속 다시 켜기 + 아직 안 켜졌으면 '다시 켜는 중' 표시
   document.addEventListener('visibilitychange', () => {
     if (!actx) return;
-    if (document.hidden) { if (actx.state === 'running') actx.suspend().catch(() => {}); return; }
+    if (document.hidden) {
+      wasAway = true;
+      clearInterval(retryTimer);
+      if (actx.state === 'running') actx.suspend().catch(() => {});
+      return;
+    }
+    if (muted) return;
     wakeAudio();
-    setTimeout(() => { if (!document.hidden && soundAsleep() && !muted) $('#sound-tap').classList.add('show'); }, 700);
+    retryWake();
+    // (돌아온 뒤 '다시 켜는 중' 글자는 띄우지 않음 — 조용히 다시 켜기만)
   });
-  window.addEventListener('pageshow', () => { wakeAudio(); });
-  $('#sound-tap').addEventListener('click', () => { wakeAudio(); $('#sound-tap').classList.remove('show'); });
+  window.addEventListener('pageshow', () => { wakeAudio(); if (actx && !muted) retryWake(); });
+  $('#sound-tap').addEventListener('click', () => { wakeAudio(); });
   $('#btn-sound').onclick = () => {
     ensureAudio();
     // 소리가 멈춰 있으면(다른 앱에 다녀온 뒤 등) 이 버튼은 '다시 켜기' — 끄지 않습니다
     if (soundAsleep() && !muted) {
-      actx.resume().catch(() => {});
+      // 직접 눌렀는데도 멈춰 있으면 — 마지막 수단으로 소리 장치를 새로 만듦 (아이폰의 '켜짐인데 소리 없음' 문제 대비)
+      if (wasAway) { wasAway = false; clearInterval(retryTimer); rebuildAudio(); } else actx.resume().catch(() => {});
       startAmbient();
       $('#sound-tap').classList.remove('show');
       toast('🔊 소리를 다시 켰어요', 1500);
@@ -4352,6 +4532,7 @@
       if (player.userData.roastLv > 1.12 && !player.userData.burnWarned) { player.userData.burnWarned = true; toast('🔥 앗, 마시멜로에 불이 붙었어요! 얼른 "먹기"!', 2600); }
     } else player.userData.burnWarned = false;
     for (const o of others.values()) if (o.av.userData.roasting) tintMallow(o.av, t);
+    updateSparklers(dt, t);
     for (let i = projectiles.length - 1; i >= 0; i--) {
       const p = projectiles[i];
       p.t += dt / p.dur;
@@ -4570,7 +4751,7 @@ const sendGap = presentIds.length <= 4 ? 0.25 : presentIds.length <= 8 ? 0.4 : 0
         id: me.id, name: me.name, color: me.look.color, look: me.look,
         x: +player.position.x.toFixed(2), z: +player.position.z.toFixed(2), ry: +player.rotation.y.toFixed(2),
         pose: u.pose, lift: +(u.pose === 'stand' ? 0 : seatOff).toFixed(2),
-        g: guitarists.has(player) ? 1 : 0, rs: u.roasting ? 1 : 0, rl: +(u.roastLv || 0).toFixed(1),
+        g: guitarists.has(player) ? 1 : 0, rs: u.roasting ? 1 : 0, rl: +(u.roastLv || 0).toFixed(1), sp: u.sparkObj ? Math.round(u.sparkLeft) : 0,
       });
     }
 

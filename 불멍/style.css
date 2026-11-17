@@ -447,9 +447,9 @@ html.arriving #intro { visibility: hidden; }          /* 건너오는 중에는 
 body.intro > #fade, body.intro > #sound-tap { visibility: visible !important; }
 
 /* 휴대폰 첫 안내 카드 — 화면 가운데 아래쪽, '알겠어요'로 닫음 */
-#coach { position: fixed; left: 50%; bottom: 22%; transform: translate(-50%, 16px); width: min(340px, calc(100vw - 32px));
+#coach { position: fixed; left: 50%; top: 42%; transform: translate(-50%, calc(-50% + 16px)); width: min(340px, calc(100vw - 32px));
   padding: 16px 18px 14px; z-index: 22; opacity: 0; pointer-events: none; transition: opacity .35s, transform .35s; }
-#coach.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+#coach.show { opacity: 1; transform: translate(-50%, -50%); pointer-events: auto; }   /* 화면 가운데보다 조금 위 */
 #coach h4 { font-size: 15px; margin-bottom: 9px; color: #ffd9a6; }
 #coach p { font-size: 13.5px; line-height: 1.55; margin-bottom: 6px; }
 #coach b { color: #ffe2b8; }

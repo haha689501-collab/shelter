@@ -5285,30 +5285,71 @@
   $('#btn-help').onclick = () => $('#help').classList.add('show');
   $('#help-close').onclick = () => $('#help').classList.remove('show');
   $('#breath-close').onclick = () => stopBreath();
+  // 소리 장치를 통째로 새로 — 다른 앱에 다녀와 소리가 안 날 때. 켜져 있던 자연음 · 물소리 · 빗소리를 다시 켭니다.
+  //   (별 음악 · 힐링 음악 · 효과음은 그때그때 actx 로 만들므로 따로 할 일 없음)
+  function rebuildAudio() {
+    const old = actx;
+    if (ambient) for (const k of ['rustleTimer', 'birdTimer', 'chimeTimer', 'cricketTimer', 'tuneTimer']) clearTimeout(ambient[k]);
+    ambient = null;
+    const hadRain = !!rainNode, hadFountain = !!fountainNode;
+    if (fountainNode && fountainNode.blipTimer) clearTimeout(fountainNode.blipTimer);
+    rainNode = null; fountainNode = null;
+    actx = null; master = null;
+    try { if (old) old.close(); } catch (e) { /* 이미 닫힘 */ }
+    ensureAudio();
+    if (!actx) return;
+    startAmbient();
+    if (hadRain) setRainSound(true);
+    if (hadFountain) toggleFountain();
+  }
   // 소리 깨우기 — 휴대폰은 다른 앱(카톡 등)에 다녀오면 소리 장치가 멈춥니다.
   //   아이폰은 상태가 'suspended' 가 아니라 'interrupted' 라서, 예전 코드(suspended 일 때만 resume)로는 다시 켜지지 않았고
   //   🔊 버튼을 누르면 오히려 '꺼짐'으로 바뀌어 새로고침밖에 방법이 없었습니다.
+  //   ※ 아이폰은 카톡 등에 다녀오면 소리 권한을 '몇 초 뒤에야' 돌려줍니다. 예전엔 다시 켜기를 한 번만 시도하고 끝나서
+  //     우연히 다시 켜질 때까지 오래 걸렸음 → 돌아오면 0.25초마다 계속 다시 켜기를 시도 (글자 안내는 없음).
+  // 아이폰에 '음악처럼 재생하는 소리'라고 알림 — 다른 앱 전환 · 무음 스위치에 덜 끊김 (사파리 16.4+)
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* 없는 브라우저 */ }
+  let wasAway = false, retryTimer = null;
   const soundAsleep = () => !!actx && actx.state !== 'running';
   function wakeAudio() {
     if (!actx || muted) return;
-    if (actx.state !== 'running') actx.resume().then(() => { if (actx.state === 'running') $('#sound-tap').classList.remove('show'); }).catch(() => {});
+    if (actx.state !== 'running') actx.resume().then(() => { if (actx && actx.state === 'running') $('#sound-tap').classList.remove('show'); }).catch(() => {});
   }
-  // 화면을 만지거나 키를 누르면 곧바로 깨움 (휴대폰은 '만지는 순간'에만 다시 켤 수 있음)
-  for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, wakeAudio, { capture: true, passive: true });
-  // 다른 앱으로 나가면 스스로 쉬고, 돌아오면 깨움 — 그래도 멈춰 있으면 '눌러서 소리 켜기' 안내
+  // 돌아온 뒤 소리가 날 때까지 0.25초마다 다시 켜기 (최대 30초) — 켜지는 순간 표시를 걷음
+  function retryWake() {
+    clearInterval(retryTimer);
+    const t0 = performance.now();
+    retryTimer = setInterval(() => {
+      if (!actx || muted || document.hidden) { clearInterval(retryTimer); return; }
+      if (actx.state === 'running') { clearInterval(retryTimer); $('#sound-tap').classList.remove('show'); wasAway = false; return; }
+      actx.resume().catch(() => {});
+      if (performance.now() - t0 > 30000) clearInterval(retryTimer);
+    }, 250);
+  }
+  // 화면을 만지거나 키를 누르면 그 순간에도 바로 시도 (휴대폰은 '손을 떼는 순간(touchend)'이 가장 확실)
+  for (const ev of ['touchend', 'click', 'keydown']) window.addEventListener(ev, wakeAudio, { capture: true, passive: true });
+  // 다른 앱으로 나가면 스스로 쉬고, 돌아오면 계속 다시 켜기 + 아직 안 켜졌으면 '다시 켜는 중' 표시
   document.addEventListener('visibilitychange', () => {
     if (!actx) return;
-    if (document.hidden) { if (actx.state === 'running') actx.suspend().catch(() => {}); return; }
+    if (document.hidden) {
+      wasAway = true;
+      clearInterval(retryTimer);
+      if (actx.state === 'running') actx.suspend().catch(() => {});
+      return;
+    }
+    if (muted) return;
     wakeAudio();
-    setTimeout(() => { if (!document.hidden && soundAsleep() && !muted) $('#sound-tap').classList.add('show'); }, 700);
+    retryWake();
+    // (돌아온 뒤 '다시 켜는 중' 글자는 띄우지 않음 — 조용히 다시 켜기만)
   });
-  window.addEventListener('pageshow', () => { wakeAudio(); });
-  $('#sound-tap').addEventListener('click', () => { wakeAudio(); $('#sound-tap').classList.remove('show'); });
+  window.addEventListener('pageshow', () => { wakeAudio(); if (actx && !muted) retryWake(); });
+  $('#sound-tap').addEventListener('click', () => { wakeAudio(); });
   $('#btn-sound').onclick = () => {
     ensureAudio();
     // 소리가 멈춰 있으면(다른 앱에 다녀온 뒤 등) 이 버튼은 '다시 켜기' — 끄지 않습니다
     if (soundAsleep() && !muted) {
-      actx.resume().catch(() => {});
+      // 직접 눌렀는데도 멈춰 있으면 — 마지막 수단으로 소리 장치를 새로 만듦 (아이폰의 '켜짐인데 소리 없음' 문제 대비)
+      if (wasAway) { wasAway = false; clearInterval(retryTimer); rebuildAudio(); } else actx.resume().catch(() => {});
       startAmbient();
       $('#sound-tap').classList.remove('show');
       toast('🔊 소리를 다시 켰어요', 1500);
