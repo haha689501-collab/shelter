@@ -4069,7 +4069,7 @@
       [74, 2], [74, 1], [77, 1.5], [74, 0.5], [71, 1], [72, 3], [76, 3],
       [72, 1], [67, 1], [64, 1], [67, 1.5], [65, 0.5], [62, 1], [60, 6]] },
   ];
-  let songI = 0, songPlaying = false, songTimer = null;
+  let songI = 0, songPlaying = false, songTimer = null, songPump = null;
   const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
   function playSong() {
     ensureAudio();
@@ -4080,13 +4080,28 @@
     songBus = actx.createGain();
     songBus.gain.value = 1;
     songBus.connect(master);
+    // 곡 전체를 한꺼번에 예약하면(소리 발생기 수백 개) 휴대폰이 버거워 지지직거림 →
+    //   배경음악처럼 0.15초마다 1초 앞까지만 예약
     const beat = 60 / s.bpm;
-    let t = 0.1;
+    const t0 = actx.currentTime + 0.15, bus = songBus;
+    const q = [];
+    let t = 0;
     for (const [m, b] of s.notes) {
-      boxNote(midi(m), 0.11, t, songBus);
-      if (s.bells && Math.round(t / beat) % 2 === 1) for (let k = 0; k < 3; k++) bell(0.025, t + k * 0.04);
+      q.push({ at: t0 + t, f: midi(m), bell: s.bells && Math.round(t / beat) % 2 === 1 });
       t += b * beat;
     }
+    clearInterval(songPump);
+    songPump = setInterval(() => {
+      if (!actx || bus !== songBus) { clearInterval(songPump); return; }
+      const now = actx.currentTime;
+      while (q.length && q[0].at < now + 1.0) {
+        const e = q.shift();
+        if (e.at < now - 0.05) continue;
+        boxNote(e.f, 0.11, e.at - now, bus);
+        if (e.bell && !LOW) bell(0.02, e.at - now);
+      }
+      if (!q.length) clearInterval(songPump);
+    }, 150);
     songPlaying = true;
     toast(`🎶 오르골 — ${s.name}`);
     songTimer = setTimeout(() => { songPlaying = false; songI++; bgmDuck(false); refreshPanel(true); }, (t + 1.5) * 1000);
@@ -4094,6 +4109,7 @@
   }
   function stopSong() {
     clearTimeout(songTimer);
+    clearInterval(songPump);
     if (songBus) {
       const b = songBus;
       b.gain.setTargetAtTime(0, actx.currentTime, 0.08);
@@ -4193,6 +4209,10 @@
   function bgmPump() {
     if (!actx || !bgmBus || actx.state !== 'running') return;
     const now = actx.currentTime;
+    if (bgmDucked || !bgmOn) {   // 오르골 · 피아노가 나오는 동안(또는 꺼 둔 동안)엔 예약도 멈춤 — 소리가 겹쳐 지지직거리지 않게
+      bgmQ = []; bgmEnd = now + 3;   // 다시 켜지면 3초 쉬었다가 다음 곡
+      return;
+    }
     if (!bgmQ.length && now > bgmEnd - 0.3) queueSong(Math.max(now + 0.4, bgmEnd + 4));   // 곡 사이 4초 쉼
     while (bgmQ.length && bgmQ[0].at < now + 1.2) {
       const e = bgmQ.shift();
@@ -4992,7 +5012,7 @@
     takeBell(player);
     santa.userData.gesture = { type: 'wave', t: 0, dur: 3 };
     sayBubble(santa, '잘 다녀오렴! 허허허');
-    jingle(8, 0.05);
+    jingle(3, 0.04);
     songI = 0;   // 징글벨
     setTimeout(() => { if (ride) playSong(); }, 600);
     toast('🛷 출발! 마을 위를 한 바퀴 날아요');
@@ -5043,7 +5063,7 @@
     player.rotation.y = targetYaw = g.rotation.y + Math.PI / 2;
     for (const d of SL.deer) d.userData.excite = 0.5;
     ride.bellT -= dt;
-    if (ride.bellT < 0) { ride.bellT = 0.9; bell(0.008); }   // 방울은 아주 작게 — 캐럴이 주인공
+
     ride.trailT -= dt;
     if (ride.trailT < 0 && lift > 0.08) {
       ride.trailT = 0.05;
