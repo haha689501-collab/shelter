@@ -5553,6 +5553,14 @@
       // 건너편 공간에 지금 몇 명 있는지 (함께 모드일 때만)
       if (D.channel && store.watchCount) store.watchCount(`${D.channel}:${room}`, (n) => { b.querySelector('.cnt').textContent = n > 0 ? ` ${n}` : ''; });
     }
+    {
+      // 휴대폰 — 탭을 이름표 바로 아래에 (이름표가 '지금 2명이 함께 쉬고 있어요' 처럼 두 줄로 늘어나도 가리지 않게)
+      const hud = $('#hud');
+      const place = () => { const r = hud.getBoundingClientRect(); document.documentElement.style.setProperty('--tabTop', Math.round(r.bottom + 6) + 'px'); };
+      place();
+      addEventListener('resize', place);
+      setInterval(place, 600);
+    }
     // 건너왔으면 — 시작 화면 없이 바로 들어갑니다. 주소의 go=1 은 지워서, 그 주소를 공유하면 시작 화면부터 보이게.
     if (params.get('go') === '1') {
       const u = new URL(location.href);

@@ -4025,7 +4025,7 @@
   }
   const crunch = (k = 1) => { noiseHit({ freq: 900 + Math.random() * 600, q: 0.8, vol: 0.05 * k, dur: 0.09, type: 'bandpass' }); noiseHit({ freq: 3200, q: 0.6, vol: 0.015 * k, dur: 0.05 }); };
   const whoosh = () => noiseHit({ freq: 1400, q: 0.5, vol: 0.04, dur: 0.25 });
-  const scrape = () => noiseHit({ freq: 5200, q: 2.5, vol: 0.02, dur: 0.35, type: 'bandpass' });
+  const scrape = (k = 1) => noiseHit({ freq: 5200, q: 2.5, vol: 0.02 * k, dur: 0.35, type: 'bandpass' });
   const sparkle = () => { const sc = [1318.5, 1568, 1760, 2093, 2637]; for (let i = 0; i < 5; i++) tone(sc[i], 0.05, 0.9, i * 0.07); };
   const pop = () => { tone(660, 0.12, 0.25); tone(990, 0.08, 0.35, 0.05); noiseHit({ freq: 2500, q: 0.7, vol: 0.08, dur: 0.12 }); };
   function chickadee() {
@@ -5514,7 +5514,7 @@
     }
     if (u.jumpV !== undefined) {
       u.jumpY += u.jumpV * dt; u.jumpV -= 15 * dt;
-      if (u.jumpY <= 0) { u.jumpY = 0; u.jumpV = undefined; u.air = false; if (actx) { if (iced) scrape(); else crunch(1.2); } if (!iced && !inHouse) puff(player.position.clone().setY(floorY(player.position.x, player.position.z) + 0.1), { n: 5, size: 0.3, up: 0.4, spread: 0.8, life: 0.6, opacity: 0.6 }); }
+      if (u.jumpY <= 0) { u.jumpY = 0; u.jumpV = undefined; u.air = false; if (actx) { if (iced) scrape(0.4); else crunch(0.25); } if (!iced && !inHouse) puff(player.position.clone().setY(floorY(player.position.x, player.position.z) + 0.1), { n: 5, size: 0.3, up: 0.4, spread: 0.8, life: 0.6, opacity: 0.6 }); }
     }
     if (!sitting) player.position.y = floorY(player.position.x, player.position.z) + (iced ? 0.03 : 0) + (u.jumpY || 0);
     let dy = targetYaw - player.rotation.y;
@@ -5527,7 +5527,7 @@
     // 발소리
     if (moving && !sitting && !u.air) {
       const ph = Math.floor(u.gait / Math.PI);
-      if (ph !== stepPhase) { stepPhase = ph; if (actx) { if (skating) scrape(); else if (!iced) crunch(0.8); } }
+      if (ph !== stepPhase) { stepPhase = ph; if (actx) { if (skating) scrape(0.35); else if (!iced) crunch(0.12); } }   // 발소리는 아주 작게 — 캐럴 배경음악을 가리지 않게
     }
 
     // --- 장소 패널
