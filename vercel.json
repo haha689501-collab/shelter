@@ -5,6 +5,9 @@
     { "source": "/room/:code", "destination": "/index.v2.html" },
     { "source": "/bulmeong", "destination": "/%EB%B6%88%EB%A9%8D" },
     { "source": "/bulmeong/", "destination": "/%EB%B6%88%EB%A9%8D" },
-    { "source": "/bulmeong/:path*", "destination": "/%EB%B6%88%EB%A9%8D/:path*" }
+    { "source": "/bulmeong/:path*", "destination": "/%EB%B6%88%EB%A9%8D/:path*" },
+    { "source": "/santa", "destination": "/%EC%82%B0%ED%83%80" },
+    { "source": "/santa/", "destination": "/%EC%82%B0%ED%83%80" },
+    { "source": "/santa/:path*", "destination": "/%EC%82%B0%ED%83%80/:path*" }
   ]
 }

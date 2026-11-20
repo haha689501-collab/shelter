@@ -458,3 +458,15 @@ body.intro > #fade, body.intro > #sound-tap { visibility: visible !important; }
 /* 길찾기 버튼을 반짝 — 안내 카드가 가리키는 곳 */
 #btn-places.coach-pulse { animation: coachPulse 1.4s ease-in-out infinite; }
 @keyframes coachPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 213, 154, .7); } 50% { box-shadow: 0 0 0 8px rgba(255, 213, 154, 0); background: rgba(255, 213, 154, .35); } }
+
+/* ---- 다른 공간 탭 (길찾기 옆) — 🌲 쉼터 · 🔥 불멍 · 🎅 산타 ---- */
+.space-tab { background: rgba(255, 170, 90, .16) !important; border-color: rgba(255, 190, 120, .4) !important; }
+.space-tab:hover { background: rgba(255, 170, 90, .32) !important; }
+.space-tab .cnt { font-size: 11px; opacity: .8; }
+@media (max-width: 760px) {
+  /* 휴대폰 — 위쪽 버튼 줄이 넘치지 않게, 탭은 이름표 아래 왼쪽에 따로 */
+  .space-tab { position: fixed; top: var(--tabTop, 66px); padding: 6px 11px !important; font-size: 12.5px; }
+  .space-tab.st-0 { left: 8px; }
+  .space-tab.st-1 { left: 84px; }
+  #topright .space-tab .lbl { display: inline !important; }
+}

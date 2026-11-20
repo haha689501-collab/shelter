@@ -5450,6 +5450,23 @@
     }
     codeInput.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) enterBtn.click(); };
   }
+  // 시작 화면의 '바로 가기' — 적어 둔 닉네임 · 방 코드를 가지고 불멍 · 산타로 바로 건너갑니다
+  for (const b of document.querySelectorAll('#intro .go-space')) {
+    b.onclick = () => {
+      const D = b.dataset.go === 'santa'
+        ? { goText: '🎅 산타 마을로 이동 중', local: '산타/index.html', web: '/santa/' }
+        : { goText: '🔥 불멍 캠프로 이동 중', local: '불멍/index.html', web: '/bulmeong/' };
+      const nm = nameInput ? nameInput.value.replace(/\s+/g, ' ').trim().slice(0, 12) : '';
+      if (nm) localStorage.setItem('shelter:name', nm);
+      const want = (codeInput && roomCode(codeInput.value)) || 'MAIN';
+      localStorage.setItem('shelter:lastRoom', want);
+      const fade = $('#fade');
+      fade.querySelector('.go-text').textContent = D.goText;
+      fade.classList.add('on');
+      const base = location.protocol === 'file:' ? new URL(D.local, location.href).href : new URL(D.web, location.origin).href;
+      setTimeout(() => location.assign(base + '?room=' + encodeURIComponent(want) + '&go=1'), 450);
+    };
+  }
   enterBtn.onclick = () => {
     // 다른 방 코드를 적었으면 그 방으로 들어갑니다
     if (codeInput) {
@@ -5510,23 +5527,32 @@
   //   ?go=1 로 건너오면 시작 화면 없이 바로 들어갑니다.
   // ------------------------------------------------------------------
   {
-    const OTHER = { label: '🔥 불멍 캠프', goText: '🔥 불멍 캠프로 가는 중', local: '불멍/index.html', web: '/bulmeong/' };
-    const otherUrl = () => {
-      const base = location.protocol === 'file:' ? new URL(OTHER.local, location.href).href : new URL(OTHER.web, location.origin).href;
+    // 다른 공간 탭 — 길찾기 옆에 따로 (길찾기에는 이 공간의 장소만)
+    //   이름 · 모습(localStorage)과 방 코드(?room=)가 그대로 따라가고, ?go=1 로 건너오면 시작 화면 없이 바로 들어갑니다.
+    const DESTS = [
+      { icon: '🔥', label: '불멍', title: '불멍 캠프로 이동', goText: '🔥 불멍 캠프로 이동 중', local: '불멍/index.html', web: '/bulmeong/', channel: 'bulmeong' },
+      { icon: '🎅', label: '산타', title: '산타 마을로 이동', goText: '🎅 산타 마을로 이동 중', local: '산타/index.html', web: '/santa/' },
+    ];
+    const urlOf = (D) => {
+      const base = location.protocol === 'file:' ? new URL(D.local, location.href).href : new URL(D.web, location.origin).href;
       return base + '?room=' + encodeURIComponent(room) + '&go=1';
     };
     const fade = $('#fade');
-    const portalBtn = el('button', { type: 'button', className: 'portal' }, [el('span', { textContent: OTHER.label }), el('span', { className: 'cnt' })]);
-    portalBtn.onclick = () => {
-      if (window.innerWidth <= 760) $('#places').classList.remove('open');
-      fade.querySelector('.go-text').textContent = OTHER.goText;               // '○○로 가는 중'
-      fade.classList.add('on');                                               // 화면이 천천히 어두워지고
-      if (master && actx) master.gain.setTargetAtTime(0, actx.currentTime, 0.15);   // 소리도 함께 잦아든 뒤
-      setTimeout(() => location.assign(otherUrl()), 350);                      // 건너갑니다 (기다림은 짧게)
-    };
-    $('#places').append(portalBtn);
-    // 건너편 공간에 지금 몇 명 있는지 (함께 모드일 때만)
-    if (store.watchCount) store.watchCount(`bulmeong:${room}`, (n) => { portalBtn.querySelector('.cnt').textContent = n > 0 ? ` · 지금 ${n}명` : ''; });
+    let anchor = $('#btn-places');
+    for (const D of DESTS) {
+      const b = el('button', { type: 'button', className: `glass iconbtn space-tab st-${DESTS.indexOf(D)}`, title: D.title }, [document.createTextNode(D.icon), el('span', { className: 'lbl', textContent: ' ' + D.label }), el('span', { className: 'cnt' })]);
+      b.onclick = () => {
+        $('#places').classList.remove('open');
+        fade.querySelector('.go-text').textContent = D.goText;                  // '○○로 이동 중'
+        fade.classList.add('on');                                               // 화면이 천천히 어두워지고
+        if (master && actx) master.gain.setTargetAtTime(0, actx.currentTime, 0.15);   // 소리도 함께 잦아든 뒤
+        setTimeout(() => location.assign(urlOf(D)), 450);                       // 건너갑니다
+      };
+      anchor.after(b);
+      anchor = b;
+      // 건너편 공간에 지금 몇 명 있는지 (함께 모드일 때만)
+      if (D.channel && store.watchCount) store.watchCount(`${D.channel}:${room}`, (n) => { b.querySelector('.cnt').textContent = n > 0 ? ` ${n}` : ''; });
+    }
     // 건너왔으면 — 시작 화면 없이 바로 들어갑니다. 주소의 go=1 은 지워서, 그 주소를 공유하면 시작 화면부터 보이게.
     if (params.get('go') === '1') {
       const u = new URL(location.href);

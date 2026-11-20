@@ -149,7 +149,7 @@
       <li class="touch">📝 나무의 쪽지와 하늘의 별을 누르면 글을 읽을 수 있어요</li>
       <li class="pc">🎹 음악실에서는 숫자키 1~8로 건반을 칠 수 있어요</li>
       <li class="touch">🎹 음악실에서는 아래 건반을 눌러 칠 수 있어요</li>
-      <li>🔥 길찾기 맨 아래 <b>불멍 캠프</b>로 밤의 모닥불 공간에 갈 수 있어요</li>
+      <li>🔥🎅 길찾기 옆 <b>불멍 · 산타</b> 탭으로 밤의 모닥불 캠프 · 눈 내리는 산타 마을에 갈 수 있어요</li>
     </ul>
     <button class="close" id="help-close" type="button">닫기</button>
   </div>
@@ -160,14 +160,23 @@
     <p class="kicker">3D HEALING SPACE</p>
     <h1 id="intro-title">쉼터</h1>
     <p class="sub" id="intro-sub"></p>
-    <ul>
-      <li>🌲 소나무 아래에서 숨 고르기</li>
-      <li>🌱 함께 물 주며 화분 키우기</li>
-      <li>☕ 창가에서 빗소리 듣기</li>
-      <li>🎹 건반 하나씩 눌러 보기</li>
-      <li>🌌 누워서 별 보고 소원 띄우기</li>
-      <li>🔥 불멍 캠프에서 모닥불 보기</li>
-    </ul>
+    <div class="intro-top">
+      <ul>
+        <li>🌲 소나무 아래에서 숨 고르기</li>
+        <li>🌱 함께 물 주며 화분 키우기</li>
+        <li>☕ 창가에서 빗소리 듣기</li>
+        <li>🎹 건반 하나씩 눌러 보기</li>
+        <li>🌌 누워서 별 보고 소원 띄우기</li>
+        <li>🔥 불멍 캠프에서 모닥불 보기</li>
+        <li>🎅 산타 마을에서 크리스마스</li>
+      </ul>
+      <!-- 다른 공간으로 바로 — 누르면 '○○로 이동 중' 화면 뒤 바로 들어감 -->
+      <div class="go-spaces">
+        <span class="go-label">바로 가기</span>
+        <button type="button" class="go-space bul" data-go="bul"><b>🔥 불멍</b><small>별 아래 모닥불</small></button>
+        <button type="button" class="go-space santa" data-go="santa"><b>🎅 산타</b><small>눈 내리는 마을</small></button>
+      </div>
+    </div>
     <div class="code">
       <label for="intro-name">닉네임</label>
       <input id="intro-name" type="text" maxlength="12" placeholder="보일 이름" autocomplete="off">

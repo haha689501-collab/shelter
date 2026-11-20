@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>산타 마을 — 눈 내리는 크리스마스 광장</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎄</text></svg>">
+<meta name="theme-color" content="#cfe6fb">
+<script>
+  // 주소가 /santa 처럼 끝에 / 없이 열리면 style.css · app.js 를 못 찾습니다 → /santa/ 로 고쳐 엽니다
+  if (/^https?:$/.test(location.protocol) && !location.pathname.endsWith('/') && !/\.html$/.test(location.pathname))
+    location.replace(location.pathname + '/' + location.search + location.hash);
+</script>
+<link rel="stylesheet" href="style.css">
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="modulepreload" href="https://unpkg.com/three@0.160.0/build/three.module.js" crossorigin>
+</head>
+<body>
+<div id="app"></div>
+<!-- 다른 공간으로 오갈 때 — '○○로 이동 중' 막 (건너온 직후에는 덮인 채 시작해, 장면이 준비되면 걷힘) -->
+<div id="travel"><div class="go-msg"><span class="go-text">🎅 산타 마을로 이동 중</span><span class="go-dots"><i></i><i></i><i></i></span></div><div class="go-sub">이름 · 방 코드가 그대로 따라가요</div></div>
+<script>
+  if (/[?&]go=1/.test(location.search)) { document.getElementById('travel').classList.add('on', 'instant'); document.documentElement.classList.add('arriving'); }
+</script>
+<div id="vignette"></div>
+
+<div id="hud" class="glass">
+  <span class="title">🎅 산타 마을</span>
+  <span class="meta" id="dday">크리스마스까지 D-?</span>
+  <span class="me">나: <b id="myname"></b><button id="rename" type="button">이름 바꾸기</button></span>
+</div>
+
+<div id="topright">
+  <button class="glass iconbtn" id="btn-places" type="button">📍 <b>길찾기</b></button>
+  <button class="glass iconbtn" id="btn-music" type="button">🎵<span> 음악 켜짐</span></button>
+  <button class="glass iconbtn" id="btn-sound" type="button">🔊<span> 소리 켜짐</span></button>
+  <button class="glass iconbtn" id="btn-help" type="button">❔<span> 도움말</span></button>
+</div>
+
+<div id="places" class="glass"><span class="label">길 찾기</span></div>
+
+<div id="gestures" class="glass">
+  <button type="button" id="g-wave">👋<span> 손 흔들기</span></button>
+  <button type="button" id="g-bow">🙇<span> 인사하기</span></button>
+  <button type="button" id="g-dance">💃<span> 춤추기</span></button>
+  <button type="button" id="g-snow">❄️<span> 눈 뿌리기</span></button>
+  <button type="button" id="g-jump">🦘<span> 점프</span></button>
+</div>
+
+<div id="fade"></div>
+<div id="panel" class="glass"></div>
+<div id="toast" class="glass"></div>
+
+<div id="modal" class="overlay">
+  <div class="box glass">
+    <h4 id="modal-title">소원 오너먼트에 적을 말</h4>
+    <input id="modal-input" type="text" maxlength="40" autocomplete="off" placeholder="예) 내년에도 다 같이 건강하게!">
+    <div class="row">
+      <span class="count" id="modal-count">0 / 40</span>
+      <div class="btns">
+        <button class="cancel" id="modal-cancel" type="button">취소</button>
+        <button class="ok" id="modal-ok" type="button">달기</button>
+      </div>
+    </div>
+    <p class="notice">미리보기 버전이라 소원은 이 브라우저에만 저장돼요.</p>
+  </div>
+</div>
+
+<div id="help" class="overlay">
+  <div class="box glass">
+    <h2>이렇게 둘러보세요</h2>
+    <ul>
+      <li>🖱 <b>눈밭을 클릭(탭)</b>하면 그곳으로 걸어가요</li>
+      <li class="touch">📱 휴대폰: <b>두 손가락</b>을 벌리면 확대, 오므리면 축소</li>
+      <li>⌨ <b>W A S D / 방향키</b>로도 움직일 수 있어요</li>
+      <li>🔄 <b>드래그</b>로 시점 회전, <b>휠</b>로 확대 · 축소</li>
+      <li>📍 장소에 가까이 가면 아래에 할 수 있는 일이 나와요</li>
+      <li>💌 트리에 달린 <b>분홍 오너먼트</b>를 누르면 소원을 읽을 수 있어요</li>
+      <li>⛸ 스케이트장에서 스케이트를 신으면 얼음 위를 미끄러져요</li>
+      <li>🏃 <b>두 번 클릭(더블 탭)</b>하면 폴짝폴짝 뛰면서 달려가요 · <b>Shift</b> 누른 채 걸으면 달리기</li>
+      <li>🦘 <b>Space</b> 또는 점프 버튼으로 폴짝 (걸으면서도 돼요)</li>
+      <li>🚪 집 문 앞에 가면 <b>문을 열고 들어갈</b> 수 있어요</li>
+    </ul>
+    <button class="close" id="help-close" type="button">닫기</button>
+  </div>
+</div>
+
+<div id="intro" class="overlay show">
+  <div class="box glass">
+    <div class="flakes">❄ ✦ ❄ ✦ ❄</div>
+    <h1>산타 마을</h1>
+    <p class="sub">눈 내리는 크리스마스 광장 · 미리보기</p>
+    <ul>
+      <li>🎄 큰 트리 불빛 바꾸고 소원 오너먼트 달기</li>
+      <li>🎁 산타의 공방에서 선물 열어 보기</li>
+      <li>☃️ 눈 굴려서 눈사람 만들기</li>
+      <li>🛷 산타의 썰매에 앉아 방울 흔들기</li>
+      <li>⛸ 꽁꽁 언 연못에서 스케이트 · ☕ 코코아 한 잔</li>
+    </ul>
+    <p class="houses-title">🚪 문을 열고 들어가 보세요 — 집마다 다른 방</p>
+    <div class="houses">
+      <div class="h"><b>🍪 생강쿠키 집</b><span>반죽 찍고 오븐에 구워 먹는 부엌</span></div>
+      <div class="h"><b>🧸 하늘색 집</b><span>장난감 기차 · 팽이 · 블록 쌓기</span></div>
+      <div class="h"><b>🛋 크림색 집</b><span>벽난로 거실, 소파에서 쿠키</span></div>
+      <div class="h"><b>🐶 분홍 집</b><span>강아지 돌보기 · 산타께 편지</span></div>
+      <div class="h"><b>🎄 민트색 집</b><span>빈 트리를 직접 꾸미기</span></div>
+      <div class="h"><b>🎹 노란 집</b><span>피아노 캐럴 · 핸드벨</span></div>
+      <div class="h"><b>🛏 눈꽃 집</b><span>포근한 침실 · 큰 양말 걸기</span></div>
+      <div class="h"><b>🎀 통나무 집</b><span>선물 포장 · 흔들의자 뜨개질</span></div>
+    </div>
+    <p class="howto pc">🖱 클릭으로 걷기 · 두 번 클릭 달리기 · 드래그 회전 · 휠 확대</p>
+    <p class="howto touch">👆 탭으로 걷기 · 두 번 탭 달리기 · 드래그 회전 · 두 손가락 확대</p>
+    <button class="enter" id="enter" type="button" disabled>마을을 꾸미는 중…</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

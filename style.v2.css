@@ -406,3 +406,34 @@ body.intro > #fade, body.intro > #sound-tap { visibility: visible !important; }
 /* 길찾기 버튼을 반짝 — 안내 카드가 가리키는 곳 */
 #btn-places.coach-pulse { animation: coachPulse 1.4s ease-in-out infinite; }
 @keyframes coachPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 213, 154, .7); } 50% { box-shadow: 0 0 0 8px rgba(255, 213, 154, 0); background: rgba(255, 213, 154, .35); } }
+
+/* ---- 다른 공간 탭 (길찾기 옆) — 🌲 쉼터 · 🔥 불멍 · 🎅 산타 ---- */
+.space-tab { background: rgba(255, 170, 90, .16) !important; border-color: rgba(255, 190, 120, .4) !important; }
+.space-tab:hover { background: rgba(255, 170, 90, .32) !important; }
+.space-tab .cnt { font-size: 11px; opacity: .8; }
+@media (max-width: 760px) {
+  /* 휴대폰 — 위쪽 버튼 줄이 넘치지 않게, 탭은 이름표 아래 왼쪽에 따로 */
+  .space-tab { position: fixed; top: var(--tabTop, 66px); padding: 6px 11px !important; font-size: 12.5px; }
+  .space-tab.st-0 { left: 8px; }
+  .space-tab.st-1 { left: 84px; }
+  #topright .space-tab .lbl { display: inline !important; }
+}
+
+/* ---- 시작 화면 — 오른쪽 '바로 가기' (불멍 · 산타) ---- */
+#intro .intro-top { display: flex; gap: 14px; align-items: center; justify-content: center; margin-bottom: 22px; }
+#intro .intro-top ul { margin-bottom: 0; }
+#intro .go-spaces { display: flex; flex-direction: column; gap: 8px; min-width: 128px; }
+#intro .go-label { font-size: 11px; letter-spacing: 2px; color: #ffcf9a; opacity: .8; }
+#intro .go-space { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 11px 12px; border-radius: 14px; cursor: pointer;
+  color: #fff; border: 1px solid rgba(255, 224, 186, .35); background: rgba(255, 255, 255, .08); transition: transform .15s, background .15s; }
+#intro .go-space b { font-size: 15px; }
+#intro .go-space small { font-size: 11px; opacity: .8; }
+#intro .go-space.bul { background: linear-gradient(160deg, rgba(255, 140, 60, .32), rgba(120, 40, 20, .3)); }
+#intro .go-space.santa { background: linear-gradient(160deg, rgba(230, 70, 70, .32), rgba(40, 120, 70, .3)); }
+#intro .go-space:hover { transform: translateY(-2px); background-color: rgba(255, 255, 255, .16); }
+@media (max-width: 760px) {
+  #intro .intro-top { flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  #intro .go-spaces { flex-direction: row; flex-wrap: wrap; justify-content: center; min-width: 0; width: 100%; }
+  #intro .go-label { width: 100%; }
+  #intro .go-space { flex: 1; padding: 9px 8px; }
+}
