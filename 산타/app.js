@@ -3968,6 +3968,7 @@
     if (actx) { if (actx.state !== 'running') actx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* 아이폰 — 무음 스위치와 상관없이 재생 */ }
     actx = new AC();
     master = actx.createGain();
     master.gain.value = soundOn ? 0.9 : 0;
@@ -5339,6 +5340,8 @@
   };
   musicLabel();
   $('#btn-sound').onclick = () => {
+    // 소리가 멈춰 있던 거라면(다른 앱에 다녀옴) — 끄지 말고 다시 켬
+    if (actx && actx.state !== 'running' && soundOn) { actx.resume().catch(() => {}); retryWake(); toast('🔊 소리를 다시 켰어요'); return; }
     ensureAudio();
     soundOn = !soundOn;
     if (master) master.gain.setTargetAtTime(soundOn ? 0.9 : 0, actx.currentTime, 0.05);
@@ -5359,10 +5362,29 @@
     u.label.position.y = 2.25;
     player.add(u.label);
   };
+  // 다른 앱(카톡 등)에 다녀오면 — 아이폰은 소리 장치가 'interrupted' 가 되고, 다시 켤 권한을 몇 초 뒤에야 돌려줌.
+  //   그래서 돌아오면 0.25초마다 다시 켜기를 시도(최대 30초), 화면을 누를 때도 다시 켬
+  let wakeTimer = null;
+  function retryWake() {
+    if (!actx) return;
+    clearInterval(wakeTimer);
+    const t0 = performance.now();
+    const tryIt = () => {
+      if (!actx || document.hidden) return;
+      if (actx.state === 'running') { clearInterval(wakeTimer); bgmLevel(); return; }
+      actx.resume().catch(() => {});
+      if (performance.now() - t0 > 30000) clearInterval(wakeTimer);
+    };
+    tryIt();
+    wakeTimer = setInterval(tryIt, 250);
+  }
   document.addEventListener('visibilitychange', () => {
     if (!actx) return;
-    if (document.hidden) actx.suspend(); else actx.resume();
+    if (document.hidden) { clearInterval(wakeTimer); actx.suspend().catch(() => {}); } else retryWake();
   });
+  addEventListener('pageshow', retryWake);
+  addEventListener('focus', retryWake);
+  for (const ev of ['pointerdown', 'touchend', 'keydown']) addEventListener(ev, () => { if (actx && actx.state !== 'running') actx.resume().catch(() => {}); }, true);
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.fov = camera.aspect < 0.8 ? 62 : 50;
@@ -5784,7 +5806,8 @@
     actP: (p, i) => actionsFor(p)[i][1](),
     runTo: (x, z) => { moveTarget = new THREE.Vector3(x, 0, z); running = true; stuckT = 0; bestD = Infinity; },
     state: () => ({ sitting, moveTarget: moveTarget && moveTarget.toArray(), inHouse: !!inHouse, doorBusy, pose: player.userData.pose, armsMode: player.userData.armsMode, stuckT, detour: { ...detour } }),
-    music: () => ({ songPlaying, bgmQ: bgmQ.length, bgmDucked, gain: bgmBus ? bgmBus.gain.value : -1 }),
+    music: () => ({ songPlaying, bgmQ: bgmQ.length, bgmDucked, gain: bgmBus ? bgmBus.gain.value : -1, state: actx && actx.state }),
+    suspend: () => actx.suspend(),
     houses: () => HOUSE_LIST, stations: () => STATIONS, inside: () => INSIDE, player: () => player, enter: (i) => enterHouse(HOUSE_LIST[i]), exit: () => exitHouse(), jump: () => jump(),
     places: placeById,
   };
