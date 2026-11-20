@@ -4104,7 +4104,7 @@
     }, 150);
     songPlaying = true;
     toast(`🎶 오르골 — ${s.name}`);
-    songTimer = setTimeout(() => { songPlaying = false; songI++; bgmDuck(false); refreshPanel(true); }, (t + 1.5) * 1000);
+    songTimer = setTimeout(() => { songPlaying = false; songI++; bgmDuck(false); refreshPanel(true); }, (t + 0.9) * 1000);   // 마지막 음이 잦아들 즈음 배경음악으로
     refreshPanel(true);
   }
   function stopSong() {
@@ -4210,7 +4210,7 @@
     if (!actx || !bgmBus || actx.state !== 'running') return;
     const now = actx.currentTime;
     if (bgmDucked || !bgmOn) {   // 오르골 · 피아노가 나오는 동안(또는 꺼 둔 동안)엔 예약도 멈춤 — 소리가 겹쳐 지지직거리지 않게
-      bgmQ = []; bgmEnd = now + 3;   // 다시 켜지면 3초 쉬었다가 다음 곡
+      bgmQ = []; bgmEnd = now - 10;   // 다시 켜지면 곧바로(0.4초 뒤) 다음 곡 — 쉬는 틈 없이
       return;
     }
     if (!bgmQ.length && now > bgmEnd - 0.3) queueSong(Math.max(now + 0.4, bgmEnd + 4));   // 곡 사이 4초 쉼
@@ -4225,7 +4225,7 @@
   function bgmLevel() {
     if (!bgmBus) return;
     const v = bgmOn && !bgmDucked ? 0.75 : 0;
-    bgmBus.gain.setTargetAtTime(v, actx.currentTime, bgmDucked ? 0.25 : 0.8);
+    bgmBus.gain.setTargetAtTime(v, actx.currentTime, bgmDucked ? 0.25 : 0.35);   // 돌아올 땐 1초 안에 제 소리로
   }
   function bgmDuck(on) { bgmDucked = on; bgmLevel(); }
   function startBgm() {
@@ -5784,6 +5784,7 @@
     actP: (p, i) => actionsFor(p)[i][1](),
     runTo: (x, z) => { moveTarget = new THREE.Vector3(x, 0, z); running = true; stuckT = 0; bestD = Infinity; },
     state: () => ({ sitting, moveTarget: moveTarget && moveTarget.toArray(), inHouse: !!inHouse, doorBusy, pose: player.userData.pose, armsMode: player.userData.armsMode, stuckT, detour: { ...detour } }),
+    music: () => ({ songPlaying, bgmQ: bgmQ.length, bgmDucked, gain: bgmBus ? bgmBus.gain.value : -1 }),
     houses: () => HOUSE_LIST, stations: () => STATIONS, inside: () => INSIDE, player: () => player, enter: (i) => enterHouse(HOUSE_LIST[i]), exit: () => exitHouse(), jump: () => jump(),
     places: placeById,
   };
